@@ -9,6 +9,7 @@ export interface Food {
 	category: string;
 	default_min: number;
 	default_max: number;
+	micros: Record<string, number>;
 }
 
 export interface SolveIngredient {
@@ -35,6 +36,15 @@ export interface SolvedIngredient {
 	fiber: number;
 }
 
+export interface MicroResult {
+	total: number;
+	smoothie: number;
+	dri: number;
+	remaining: number;
+	pct: number;
+	optimized: boolean;
+}
+
 export interface SolveResponse {
 	status: string;
 	ingredients: SolvedIngredient[];
@@ -43,6 +53,7 @@ export interface SolveResponse {
 	meal_fat: number;
 	meal_carbs: number;
 	meal_fiber: number;
+	micros: Record<string, MicroResult>;
 }
 
 export async function fetchFoods(): Promise<Record<string, Food>> {
@@ -53,12 +64,15 @@ export async function fetchFoods(): Promise<Record<string, Food>> {
 export async function solve(
 	ingredients: SolveIngredient[],
 	targets: SolveTargets,
-	objective: string
+	objective: string,
+	sex: string,
+	age_group: string,
+	optimize_nutrients: string[]
 ): Promise<SolveResponse> {
 	const res = await fetch('/api/solve', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ingredients, targets, objective })
+		body: JSON.stringify({ ingredients, targets, objective, sex, age_group, optimize_nutrients })
 	});
 	return res.json();
 }

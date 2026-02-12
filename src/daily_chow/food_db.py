@@ -1,18 +1,37 @@
-"""Built-in food nutrition database for Daily Chow.
+"""Food database for Daily Chow.
 
-Each entry stores macros per 100g and sensible default bounds (grams).
-Keys are stable slugs used in state persistence; display names are separate.
+Each FoodEntry maps to a USDA Foundation Food via usda_fdc_id. For foods
+without a USDA match, manual macro values are provided as fallback.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True, slots=True)
+class FoodEntry:
+    key: str
+    name: str
+    category: str
+    unit_note: str = ""
+    default_min: int = 0
+    default_max: int = 500
+    usda_fdc_id: int | None = None
+    # Fallback macros for foods without USDA data (per 100g)
+    manual_cal: float | None = None
+    manual_protein: float | None = None
+    manual_fat: float | None = None
+    manual_carbs: float | None = None
+    manual_fiber: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class Food:
+    """Resolved food with all nutrition data (built by usda.py loader)."""
+
     name: str
-    unit_note: str  # e.g. "dry", "raw", "cooked"
+    unit_note: str
     cal_per_100g: float
     protein_per_100g: float
     fat_per_100g: float
@@ -21,810 +40,316 @@ class Food:
     category: str
     default_min: int = 0
     default_max: int = 500
+    micros: dict[str, float] = field(default_factory=dict)
 
 
 # ── Database ──────────────────────────────────────────────────────────
 
-FOODS: dict[str, Food] = {
+FOOD_ENTRIES: dict[str, FoodEntry] = {
     # ── Grains ────────────────────────────────────────────────────────
-    "white_rice_dry": Food(
-        name="White rice",
-        unit_note="dry",
-        cal_per_100g=365,
-        protein_per_100g=7.0,
-        fat_per_100g=0.6,
-        carbs_per_100g=80.0,
-        fiber_per_100g=1.0,
-        category="grains",
-        default_min=0,
-        default_max=400,
+    "white_rice_dry": FoodEntry(
+        key="white_rice_dry", name="White rice", category="grains",
+        unit_note="dry", default_max=400, usda_fdc_id=2512381,
     ),
-    "brown_rice_dry": Food(
-        name="Brown rice",
-        unit_note="dry",
-        cal_per_100g=370,
-        protein_per_100g=7.9,
-        fat_per_100g=2.9,
-        carbs_per_100g=77.0,
-        fiber_per_100g=3.5,
-        category="grains",
-        default_min=0,
-        default_max=400,
+    "brown_rice_dry": FoodEntry(
+        key="brown_rice_dry", name="Brown rice", category="grains",
+        unit_note="dry", default_max=400, usda_fdc_id=2512380,
     ),
-    "oats_dry": Food(
-        name="Oats",
-        unit_note="dry",
-        cal_per_100g=389,
-        protein_per_100g=16.9,
-        fat_per_100g=6.9,
-        carbs_per_100g=66.0,
-        fiber_per_100g=10.6,
-        category="grains",
-        default_min=0,
+    "oats_dry": FoodEntry(
+        key="oats_dry", name="Oats", category="grains",
+        unit_note="dry", default_max=300, usda_fdc_id=2346396,
+    ),
+    "quinoa_dry": FoodEntry(
+        key="quinoa_dry", name="Quinoa", category="grains",
+        unit_note="dry", default_max=300,
+        manual_cal=368, manual_protein=14.1, manual_fat=6.1,
+        manual_carbs=64.0, manual_fiber=7.0,
+    ),
+    "pasta_dry": FoodEntry(
+        key="pasta_dry", name="Pasta", category="grains",
+        unit_note="dry", default_max=400,
+        manual_cal=371, manual_protein=13.0, manual_fat=1.5,
+        manual_carbs=75.0, manual_fiber=1.8,
+    ),
+    "bread_whole_wheat": FoodEntry(
+        key="bread_whole_wheat", name="Whole wheat bread", category="grains",
+        unit_note="sliced", default_max=300, usda_fdc_id=335240,
+    ),
+    "corn_tortilla": FoodEntry(
+        key="corn_tortilla", name="Corn tortilla", category="grains",
         default_max=300,
+        manual_cal=218, manual_protein=5.7, manual_fat=2.8,
+        manual_carbs=44.0, manual_fiber=5.2,
     ),
-    "quinoa_dry": Food(
-        name="Quinoa",
-        unit_note="dry",
-        cal_per_100g=368,
-        protein_per_100g=14.1,
-        fat_per_100g=6.1,
-        carbs_per_100g=64.0,
-        fiber_per_100g=7.0,
-        category="grains",
-        default_min=0,
-        default_max=300,
+    "sweet_potato_raw": FoodEntry(
+        key="sweet_potato_raw", name="Sweet potato", category="grains",
+        unit_note="raw", default_max=500, usda_fdc_id=2346404,
     ),
-    "pasta_dry": Food(
-        name="Pasta",
-        unit_note="dry",
-        cal_per_100g=371,
-        protein_per_100g=13.0,
-        fat_per_100g=1.5,
-        carbs_per_100g=75.0,
-        fiber_per_100g=1.8,
-        category="grains",
-        default_min=0,
-        default_max=400,
-    ),
-    "bread_whole_wheat": Food(
-        name="Whole wheat bread",
-        unit_note="sliced",
-        cal_per_100g=247,
-        protein_per_100g=13.0,
-        fat_per_100g=3.4,
-        carbs_per_100g=41.0,
-        fiber_per_100g=6.8,
-        category="grains",
-        default_min=0,
-        default_max=300,
-    ),
-    "corn_tortilla": Food(
-        name="Corn tortilla",
-        unit_note="—",
-        cal_per_100g=218,
-        protein_per_100g=5.7,
-        fat_per_100g=2.8,
-        carbs_per_100g=44.0,
-        fiber_per_100g=5.2,
-        category="grains",
-        default_min=0,
-        default_max=300,
-    ),
-    "sweet_potato_raw": Food(
-        name="Sweet potato",
-        unit_note="raw",
-        cal_per_100g=86,
-        protein_per_100g=1.6,
-        fat_per_100g=0.1,
-        carbs_per_100g=20.0,
-        fiber_per_100g=3.0,
-        category="grains",
-        default_min=0,
-        default_max=500,
-    ),
-    "potato_raw": Food(
-        name="Potato",
-        unit_note="raw",
-        cal_per_100g=77,
-        protein_per_100g=2.0,
-        fat_per_100g=0.1,
-        carbs_per_100g=17.0,
-        fiber_per_100g=2.2,
-        category="grains",
-        default_min=0,
-        default_max=500,
+    "potato_raw": FoodEntry(
+        key="potato_raw", name="Potato", category="grains",
+        unit_note="raw", default_max=500, usda_fdc_id=2346401,
     ),
     # ── Vegetables ────────────────────────────────────────────────────
-    "broccoli_raw": Food(
-        name="Broccoli",
-        unit_note="raw",
-        cal_per_100g=34,
-        protein_per_100g=2.8,
-        fat_per_100g=0.4,
-        carbs_per_100g=7.0,
-        fiber_per_100g=2.6,
-        category="vegetables",
-        default_min=0,
-        default_max=400,
+    "broccoli_raw": FoodEntry(
+        key="broccoli_raw", name="Broccoli", category="vegetables",
+        unit_note="raw", default_max=400, usda_fdc_id=747447,
     ),
-    "carrots_raw": Food(
-        name="Carrots",
-        unit_note="raw",
-        cal_per_100g=41,
-        protein_per_100g=0.9,
-        fat_per_100g=0.2,
-        carbs_per_100g=10.0,
-        fiber_per_100g=2.8,
-        category="vegetables",
-        default_min=0,
-        default_max=300,
+    "carrots_raw": FoodEntry(
+        key="carrots_raw", name="Carrots", category="vegetables",
+        unit_note="raw", default_max=300, usda_fdc_id=2258586,
     ),
-    "zucchini_raw": Food(
-        name="Zucchini",
-        unit_note="raw",
-        cal_per_100g=17,
-        protein_per_100g=1.2,
-        fat_per_100g=0.3,
-        carbs_per_100g=3.1,
-        fiber_per_100g=1.0,
-        category="vegetables",
-        default_min=0,
-        default_max=500,
+    "zucchini_raw": FoodEntry(
+        key="zucchini_raw", name="Zucchini", category="vegetables",
+        unit_note="raw", default_max=500, usda_fdc_id=2685568,
     ),
-    "spinach_raw": Food(
-        name="Spinach",
-        unit_note="raw",
-        cal_per_100g=23,
-        protein_per_100g=2.9,
-        fat_per_100g=0.4,
-        carbs_per_100g=3.6,
-        fiber_per_100g=2.2,
-        category="vegetables",
-        default_min=0,
-        default_max=300,
+    "spinach_raw": FoodEntry(
+        key="spinach_raw", name="Spinach", category="vegetables",
+        unit_note="raw", default_max=300, usda_fdc_id=1999633,
     ),
-    "kale_raw": Food(
-        name="Kale",
-        unit_note="raw",
-        cal_per_100g=49,
-        protein_per_100g=4.3,
-        fat_per_100g=0.9,
-        carbs_per_100g=9.0,
-        fiber_per_100g=3.6,
-        category="vegetables",
-        default_min=0,
-        default_max=300,
+    "kale_raw": FoodEntry(
+        key="kale_raw", name="Kale", category="vegetables",
+        unit_note="raw", default_max=300, usda_fdc_id=323505,
     ),
-    "bell_pepper_raw": Food(
-        name="Bell pepper",
-        unit_note="raw",
-        cal_per_100g=31,
-        protein_per_100g=1.0,
-        fat_per_100g=0.3,
-        carbs_per_100g=6.0,
-        fiber_per_100g=2.1,
-        category="vegetables",
-        default_min=0,
-        default_max=400,
+    "bell_pepper_raw": FoodEntry(
+        key="bell_pepper_raw", name="Bell pepper", category="vegetables",
+        unit_note="raw", default_max=400, usda_fdc_id=2258590,
     ),
-    "tomato_raw": Food(
-        name="Tomato",
-        unit_note="raw",
-        cal_per_100g=18,
-        protein_per_100g=0.9,
-        fat_per_100g=0.2,
-        carbs_per_100g=3.9,
-        fiber_per_100g=1.2,
-        category="vegetables",
-        default_min=0,
-        default_max=500,
+    "tomato_raw": FoodEntry(
+        key="tomato_raw", name="Tomato", category="vegetables",
+        unit_note="raw", default_max=500, usda_fdc_id=1999634,
     ),
-    "onion_raw": Food(
-        name="Onion",
-        unit_note="raw",
-        cal_per_100g=40,
-        protein_per_100g=1.1,
-        fat_per_100g=0.1,
-        carbs_per_100g=9.3,
-        fiber_per_100g=1.7,
-        category="vegetables",
-        default_min=0,
-        default_max=300,
+    "onion_raw": FoodEntry(
+        key="onion_raw", name="Onion", category="vegetables",
+        unit_note="raw", default_max=300, usda_fdc_id=790646,
     ),
-    "cauliflower_raw": Food(
-        name="Cauliflower",
-        unit_note="raw",
-        cal_per_100g=25,
-        protein_per_100g=1.9,
-        fat_per_100g=0.3,
-        carbs_per_100g=5.0,
-        fiber_per_100g=2.0,
-        category="vegetables",
-        default_min=0,
-        default_max=400,
+    "cauliflower_raw": FoodEntry(
+        key="cauliflower_raw", name="Cauliflower", category="vegetables",
+        unit_note="raw", default_max=400, usda_fdc_id=2685573,
     ),
-    "cabbage_raw": Food(
-        name="Cabbage",
-        unit_note="raw",
-        cal_per_100g=25,
-        protein_per_100g=1.3,
-        fat_per_100g=0.1,
-        carbs_per_100g=5.8,
-        fiber_per_100g=2.5,
-        category="vegetables",
-        default_min=0,
-        default_max=400,
+    "cabbage_raw": FoodEntry(
+        key="cabbage_raw", name="Cabbage", category="vegetables",
+        unit_note="raw", default_max=400, usda_fdc_id=2346407,
     ),
-    "cucumber_raw": Food(
-        name="Cucumber",
-        unit_note="raw",
-        cal_per_100g=15,
-        protein_per_100g=0.7,
-        fat_per_100g=0.1,
-        carbs_per_100g=3.6,
-        fiber_per_100g=0.5,
-        category="vegetables",
-        default_min=0,
-        default_max=400,
+    "cucumber_raw": FoodEntry(
+        key="cucumber_raw", name="Cucumber", category="vegetables",
+        unit_note="raw", default_max=400, usda_fdc_id=2346406,
     ),
-    "mushrooms_raw": Food(
-        name="Mushrooms",
-        unit_note="raw",
-        cal_per_100g=22,
-        protein_per_100g=3.1,
-        fat_per_100g=0.3,
-        carbs_per_100g=3.3,
-        fiber_per_100g=1.0,
-        category="vegetables",
-        default_min=0,
-        default_max=300,
+    "mushrooms_raw": FoodEntry(
+        key="mushrooms_raw", name="Mushrooms", category="vegetables",
+        unit_note="raw", default_max=300, usda_fdc_id=1999629,
     ),
-    "green_beans_raw": Food(
-        name="Green beans",
-        unit_note="raw",
-        cal_per_100g=31,
-        protein_per_100g=1.8,
-        fat_per_100g=0.2,
-        carbs_per_100g=7.0,
-        fiber_per_100g=2.7,
-        category="vegetables",
-        default_min=0,
-        default_max=400,
+    "green_beans_raw": FoodEntry(
+        key="green_beans_raw", name="Green beans", category="vegetables",
+        unit_note="raw", default_max=400, usda_fdc_id=2346400,
     ),
-    "asparagus_raw": Food(
-        name="Asparagus",
-        unit_note="raw",
-        cal_per_100g=20,
-        protein_per_100g=2.2,
-        fat_per_100g=0.1,
-        carbs_per_100g=3.9,
-        fiber_per_100g=2.1,
-        category="vegetables",
-        default_min=0,
-        default_max=400,
+    "asparagus_raw": FoodEntry(
+        key="asparagus_raw", name="Asparagus", category="vegetables",
+        unit_note="raw", default_max=400, usda_fdc_id=2710823,
     ),
-    "brussels_sprouts_raw": Food(
-        name="Brussels sprouts",
-        unit_note="raw",
-        cal_per_100g=43,
-        protein_per_100g=3.4,
-        fat_per_100g=0.3,
-        carbs_per_100g=9.0,
-        fiber_per_100g=3.8,
-        category="vegetables",
-        default_min=0,
-        default_max=400,
+    "brussels_sprouts_raw": FoodEntry(
+        key="brussels_sprouts_raw", name="Brussels sprouts", category="vegetables",
+        unit_note="raw", default_max=400, usda_fdc_id=2685575,
     ),
     # ── Legumes ───────────────────────────────────────────────────────
-    "black_beans_cooked": Food(
-        name="Black beans",
-        unit_note="cooked",
-        cal_per_100g=132,
-        protein_per_100g=8.9,
-        fat_per_100g=0.5,
-        carbs_per_100g=24.0,
-        fiber_per_100g=8.7,
-        category="legumes",
-        default_min=0,
-        default_max=400,
+    "black_beans_cooked": FoodEntry(
+        key="black_beans_cooked", name="Black beans", category="legumes",
+        unit_note="cooked", default_max=400, usda_fdc_id=2644285,
     ),
-    "yellow_split_peas_dry": Food(
-        name="Yellow split peas",
-        unit_note="dry",
-        cal_per_100g=352,
-        protein_per_100g=24.0,
-        fat_per_100g=1.2,
-        carbs_per_100g=60.0,
-        fiber_per_100g=25.0,
-        category="legumes",
-        default_min=0,
-        default_max=150,
+    "yellow_split_peas_dry": FoodEntry(
+        key="yellow_split_peas_dry", name="Yellow split peas", category="legumes",
+        unit_note="dry", default_max=150,
+        manual_cal=352, manual_protein=24.0, manual_fat=1.2,
+        manual_carbs=60.0, manual_fiber=25.0,
     ),
-    "lentils_dry": Food(
-        name="Lentils",
-        unit_note="dry",
-        cal_per_100g=352,
-        protein_per_100g=24.6,
-        fat_per_100g=1.1,
-        carbs_per_100g=60.0,
-        fiber_per_100g=10.7,
-        category="legumes",
-        default_min=0,
-        default_max=200,
+    "lentils_dry": FoodEntry(
+        key="lentils_dry", name="Lentils", category="legumes",
+        unit_note="dry", default_max=200, usda_fdc_id=2644283,
     ),
-    "chickpeas_cooked": Food(
-        name="Chickpeas",
-        unit_note="cooked",
-        cal_per_100g=164,
-        protein_per_100g=8.9,
-        fat_per_100g=2.6,
-        carbs_per_100g=27.0,
-        fiber_per_100g=7.6,
-        category="legumes",
-        default_min=0,
-        default_max=400,
+    "chickpeas_cooked": FoodEntry(
+        key="chickpeas_cooked", name="Chickpeas", category="legumes",
+        unit_note="cooked", default_max=400, usda_fdc_id=2644288,
     ),
-    "kidney_beans_cooked": Food(
-        name="Kidney beans",
-        unit_note="cooked",
-        cal_per_100g=127,
-        protein_per_100g=8.7,
-        fat_per_100g=0.5,
-        carbs_per_100g=22.8,
-        fiber_per_100g=6.4,
-        category="legumes",
-        default_min=0,
-        default_max=400,
+    "kidney_beans_cooked": FoodEntry(
+        key="kidney_beans_cooked", name="Kidney beans", category="legumes",
+        unit_note="cooked", default_max=400, usda_fdc_id=2644289,
     ),
-    "pinto_beans_cooked": Food(
-        name="Pinto beans",
-        unit_note="cooked",
-        cal_per_100g=143,
-        protein_per_100g=9.0,
-        fat_per_100g=0.6,
-        carbs_per_100g=26.0,
-        fiber_per_100g=9.0,
-        category="legumes",
-        default_min=0,
-        default_max=400,
+    "pinto_beans_cooked": FoodEntry(
+        key="pinto_beans_cooked", name="Pinto beans", category="legumes",
+        unit_note="cooked", default_max=400, usda_fdc_id=2644292,
     ),
-    "edamame_shelled": Food(
-        name="Edamame",
-        unit_note="shelled",
-        cal_per_100g=121,
-        protein_per_100g=11.9,
-        fat_per_100g=5.2,
-        carbs_per_100g=8.9,
-        fiber_per_100g=5.2,
-        category="legumes",
-        default_min=0,
-        default_max=400,
+    "edamame_shelled": FoodEntry(
+        key="edamame_shelled", name="Edamame", category="legumes",
+        unit_note="shelled", default_max=400,
+        manual_cal=121, manual_protein=11.9, manual_fat=5.2,
+        manual_carbs=8.9, manual_fiber=5.2,
     ),
     # ── Meats ─────────────────────────────────────────────────────────
-    "ground_beef_80_20_raw": Food(
-        name="Ground beef 80/20",
-        unit_note="raw",
-        cal_per_100g=254,
-        protein_per_100g=17.0,
-        fat_per_100g=20.0,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="meats",
-        default_min=0,
-        default_max=1000,
+    "ground_beef_80_20_raw": FoodEntry(
+        key="ground_beef_80_20_raw", name="Ground beef 80/20", category="meats",
+        unit_note="raw", default_max=1000, usda_fdc_id=2514744,
     ),
-    "ground_beef_90_10_raw": Food(
-        name="Ground beef 90/10",
-        unit_note="raw",
-        cal_per_100g=176,
-        protein_per_100g=20.0,
-        fat_per_100g=10.0,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="meats",
-        default_min=0,
-        default_max=1000,
+    "ground_beef_90_10_raw": FoodEntry(
+        key="ground_beef_90_10_raw", name="Ground beef 90/10", category="meats",
+        unit_note="raw", default_max=1000, usda_fdc_id=2514743,
     ),
-    "chicken_thigh_raw": Food(
-        name="Chicken thigh",
-        unit_note="raw, boneless skinless",
-        cal_per_100g=209,
-        protein_per_100g=26.0,
-        fat_per_100g=10.9,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="meats",
-        default_min=0,
-        default_max=1000,
+    "chicken_thigh_raw": FoodEntry(
+        key="chicken_thigh_raw", name="Chicken thigh", category="meats",
+        unit_note="raw, boneless skinless", default_max=1000, usda_fdc_id=2646171,
     ),
-    "chicken_breast_raw": Food(
-        name="Chicken breast",
-        unit_note="raw, boneless skinless",
-        cal_per_100g=120,
-        protein_per_100g=22.5,
-        fat_per_100g=2.6,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="meats",
-        default_min=0,
-        default_max=1000,
+    "chicken_breast_raw": FoodEntry(
+        key="chicken_breast_raw", name="Chicken breast", category="meats",
+        unit_note="raw, boneless skinless", default_max=1000, usda_fdc_id=2646170,
     ),
-    "turkey_ground_93_raw": Food(
-        name="Ground turkey 93/7",
-        unit_note="raw",
-        cal_per_100g=150,
-        protein_per_100g=19.0,
-        fat_per_100g=8.0,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="meats",
-        default_min=0,
-        default_max=1000,
+    "turkey_ground_93_raw": FoodEntry(
+        key="turkey_ground_93_raw", name="Ground turkey 93/7", category="meats",
+        unit_note="raw", default_max=1000, usda_fdc_id=2514747,
     ),
-    "pork_loin_raw": Food(
-        name="Pork loin",
-        unit_note="raw",
-        cal_per_100g=143,
-        protein_per_100g=21.0,
-        fat_per_100g=5.3,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="meats",
-        default_min=0,
-        default_max=1000,
+    "pork_loin_raw": FoodEntry(
+        key="pork_loin_raw", name="Pork loin", category="meats",
+        unit_note="raw", default_max=1000, usda_fdc_id=2646168,
     ),
-    "pork_shoulder_raw": Food(
-        name="Pork shoulder",
-        unit_note="raw",
-        cal_per_100g=236,
-        protein_per_100g=16.0,
-        fat_per_100g=17.0,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="meats",
-        default_min=0,
-        default_max=1000,
+    "pork_shoulder_raw": FoodEntry(
+        key="pork_shoulder_raw", name="Pork shoulder", category="meats",
+        unit_note="raw", default_max=1000,
+        manual_cal=236, manual_protein=16.0, manual_fat=17.0,
+        manual_carbs=0.0, manual_fiber=0.0,
     ),
-    "steak_sirloin_raw": Food(
-        name="Sirloin steak",
-        unit_note="raw",
-        cal_per_100g=183,
-        protein_per_100g=21.0,
-        fat_per_100g=9.3,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="meats",
-        default_min=0,
-        default_max=1000,
+    "steak_sirloin_raw": FoodEntry(
+        key="steak_sirloin_raw", name="Sirloin steak", category="meats",
+        unit_note="raw", default_max=1000, usda_fdc_id=2727574,
     ),
     # ── Seafood ───────────────────────────────────────────────────────
-    "salmon_raw": Food(
-        name="Salmon",
-        unit_note="raw, Atlantic",
-        cal_per_100g=208,
-        protein_per_100g=20.0,
-        fat_per_100g=13.0,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="seafood",
-        default_min=0,
-        default_max=500,
+    "salmon_raw": FoodEntry(
+        key="salmon_raw", name="Salmon", category="seafood",
+        unit_note="raw, Atlantic", default_max=500, usda_fdc_id=2684441,
     ),
-    "shrimp_raw": Food(
-        name="Shrimp",
-        unit_note="raw",
-        cal_per_100g=85,
-        protein_per_100g=20.0,
-        fat_per_100g=0.5,
-        carbs_per_100g=0.2,
-        fiber_per_100g=0.0,
-        category="seafood",
-        default_min=0,
-        default_max=500,
+    "shrimp_raw": FoodEntry(
+        key="shrimp_raw", name="Shrimp", category="seafood",
+        unit_note="raw", default_max=500, usda_fdc_id=2684443,
     ),
-    "tuna_canned": Food(
-        name="Tuna",
-        unit_note="canned in water, drained",
-        cal_per_100g=116,
-        protein_per_100g=25.5,
-        fat_per_100g=1.0,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="seafood",
-        default_min=0,
-        default_max=400,
+    "tuna_canned": FoodEntry(
+        key="tuna_canned", name="Tuna", category="seafood",
+        unit_note="canned in water, drained", default_max=400, usda_fdc_id=334194,
     ),
-    "tilapia_raw": Food(
-        name="Tilapia",
-        unit_note="raw",
-        cal_per_100g=96,
-        protein_per_100g=20.0,
-        fat_per_100g=1.7,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="seafood",
-        default_min=0,
-        default_max=500,
+    "tilapia_raw": FoodEntry(
+        key="tilapia_raw", name="Tilapia", category="seafood",
+        unit_note="raw", default_max=500, usda_fdc_id=2684442,
     ),
-    "cod_raw": Food(
-        name="Cod",
-        unit_note="raw",
-        cal_per_100g=82,
-        protein_per_100g=18.0,
-        fat_per_100g=0.7,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="seafood",
-        default_min=0,
-        default_max=500,
+    "cod_raw": FoodEntry(
+        key="cod_raw", name="Cod", category="seafood",
+        unit_note="raw", default_max=500, usda_fdc_id=2684444,
     ),
     # ── Oils & Fats ───────────────────────────────────────────────────
-    "avocado_oil": Food(
-        name="Avocado oil",
-        unit_note="—",
-        cal_per_100g=884,
-        protein_per_100g=0.0,
-        fat_per_100g=100.0,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="oils_fats",
-        default_min=0,
+    "avocado_oil": FoodEntry(
+        key="avocado_oil", name="Avocado oil", category="oils_fats",
         default_max=100,
+        manual_cal=884, manual_protein=0.0, manual_fat=100.0,
+        manual_carbs=0.0, manual_fiber=0.0,
     ),
-    "olive_oil": Food(
-        name="Olive oil",
-        unit_note="—",
-        cal_per_100g=884,
-        protein_per_100g=0.0,
-        fat_per_100g=100.0,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="oils_fats",
-        default_min=0,
-        default_max=100,
+    "olive_oil": FoodEntry(
+        key="olive_oil", name="Olive oil", category="oils_fats",
+        default_max=100, usda_fdc_id=748608,
+        # USDA entry has sparse nutrients; provide manual macros as fallback
+        manual_cal=884, manual_protein=0.0, manual_fat=100.0,
+        manual_carbs=0.0, manual_fiber=0.0,
     ),
-    "coconut_oil": Food(
-        name="Coconut oil",
-        unit_note="—",
-        cal_per_100g=862,
-        protein_per_100g=0.0,
-        fat_per_100g=100.0,
-        carbs_per_100g=0.0,
-        fiber_per_100g=0.0,
-        category="oils_fats",
-        default_min=0,
-        default_max=100,
+    "coconut_oil": FoodEntry(
+        key="coconut_oil", name="Coconut oil", category="oils_fats",
+        default_max=100, usda_fdc_id=330458,
     ),
-    "butter": Food(
-        name="Butter",
-        unit_note="—",
-        cal_per_100g=717,
-        protein_per_100g=0.9,
-        fat_per_100g=81.0,
-        carbs_per_100g=0.1,
-        fiber_per_100g=0.0,
-        category="oils_fats",
-        default_min=0,
-        default_max=100,
+    "butter": FoodEntry(
+        key="butter", name="Butter", category="oils_fats",
+        default_max=100, usda_fdc_id=789828,
     ),
     # ── Dairy ─────────────────────────────────────────────────────────
-    "whole_milk": Food(
-        name="Whole milk",
-        unit_note="—",
-        cal_per_100g=61,
-        protein_per_100g=3.2,
-        fat_per_100g=3.3,
-        carbs_per_100g=4.8,
-        fiber_per_100g=0.0,
-        category="dairy",
-        default_min=0,
-        default_max=500,
+    "whole_milk": FoodEntry(
+        key="whole_milk", name="Whole milk", category="dairy",
+        default_max=500, usda_fdc_id=746782,
     ),
-    "greek_yogurt_whole": Food(
-        name="Greek yogurt (whole)",
-        unit_note="—",
-        cal_per_100g=97,
-        protein_per_100g=9.0,
-        fat_per_100g=5.0,
-        carbs_per_100g=3.6,
-        fiber_per_100g=0.0,
-        category="dairy",
-        default_min=0,
-        default_max=500,
+    "greek_yogurt_whole": FoodEntry(
+        key="greek_yogurt_whole", name="Greek yogurt (whole)", category="dairy",
+        default_max=500, usda_fdc_id=2259794,
     ),
-    "cottage_cheese": Food(
-        name="Cottage cheese",
-        unit_note="2% milkfat",
-        cal_per_100g=84,
-        protein_per_100g=11.0,
-        fat_per_100g=2.3,
-        carbs_per_100g=3.4,
-        fiber_per_100g=0.0,
-        category="dairy",
-        default_min=0,
-        default_max=500,
+    "cottage_cheese": FoodEntry(
+        key="cottage_cheese", name="Cottage cheese", category="dairy",
+        unit_note="2% milkfat", default_max=500, usda_fdc_id=2346384,
     ),
-    "cheddar_cheese": Food(
-        name="Cheddar cheese",
-        unit_note="—",
-        cal_per_100g=403,
-        protein_per_100g=25.0,
-        fat_per_100g=33.0,
-        carbs_per_100g=1.3,
-        fiber_per_100g=0.0,
-        category="dairy",
-        default_min=0,
-        default_max=200,
+    "cheddar_cheese": FoodEntry(
+        key="cheddar_cheese", name="Cheddar cheese", category="dairy",
+        default_max=200, usda_fdc_id=328637,
     ),
-    "eggs_whole": Food(
-        name="Eggs",
-        unit_note="whole, raw (~50g each)",
-        cal_per_100g=143,
-        protein_per_100g=12.6,
-        fat_per_100g=9.5,
-        carbs_per_100g=1.1,
-        fiber_per_100g=0.0,
-        category="dairy",
-        default_min=0,
-        default_max=400,
+    "eggs_whole": FoodEntry(
+        key="eggs_whole", name="Eggs", category="dairy",
+        unit_note="whole, raw (~50g each)", default_max=400, usda_fdc_id=748967,
     ),
     # ── Nuts & Seeds ──────────────────────────────────────────────────
-    "almonds": Food(
-        name="Almonds",
-        unit_note="raw",
-        cal_per_100g=579,
-        protein_per_100g=21.2,
-        fat_per_100g=49.0,
-        carbs_per_100g=22.0,
-        fiber_per_100g=12.5,
-        category="nuts_seeds",
-        default_min=0,
-        default_max=150,
+    "almonds": FoodEntry(
+        key="almonds", name="Almonds", category="nuts_seeds",
+        unit_note="raw", default_max=150, usda_fdc_id=2346393,
     ),
-    "peanut_butter": Food(
-        name="Peanut butter",
-        unit_note="—",
-        cal_per_100g=588,
-        protein_per_100g=25.0,
-        fat_per_100g=50.0,
-        carbs_per_100g=20.0,
-        fiber_per_100g=6.0,
-        category="nuts_seeds",
-        default_min=0,
-        default_max=150,
+    "peanut_butter": FoodEntry(
+        key="peanut_butter", name="Peanut butter", category="nuts_seeds",
+        default_max=150, usda_fdc_id=2262072,
     ),
-    "walnuts": Food(
-        name="Walnuts",
-        unit_note="raw",
-        cal_per_100g=654,
-        protein_per_100g=15.2,
-        fat_per_100g=65.0,
-        carbs_per_100g=14.0,
-        fiber_per_100g=6.7,
-        category="nuts_seeds",
-        default_min=0,
-        default_max=150,
+    "walnuts": FoodEntry(
+        key="walnuts", name="Walnuts", category="nuts_seeds",
+        unit_note="raw", default_max=150, usda_fdc_id=2346394,
     ),
-    "chia_seeds": Food(
-        name="Chia seeds",
-        unit_note="—",
-        cal_per_100g=486,
-        protein_per_100g=17.0,
-        fat_per_100g=31.0,
-        carbs_per_100g=42.0,
-        fiber_per_100g=34.4,
-        category="nuts_seeds",
-        default_min=0,
-        default_max=100,
+    "chia_seeds": FoodEntry(
+        key="chia_seeds", name="Chia seeds", category="nuts_seeds",
+        default_max=100, usda_fdc_id=2710819,
     ),
-    "flax_seeds": Food(
-        name="Flax seeds",
-        unit_note="ground",
-        cal_per_100g=534,
-        protein_per_100g=18.3,
-        fat_per_100g=42.0,
-        carbs_per_100g=29.0,
-        fiber_per_100g=27.3,
-        category="nuts_seeds",
-        default_min=0,
-        default_max=100,
+    "flax_seeds": FoodEntry(
+        key="flax_seeds", name="Flax seeds", category="nuts_seeds",
+        unit_note="ground", default_max=100, usda_fdc_id=2262075,
     ),
-    "hemp_seeds": Food(
-        name="Hemp seeds",
-        unit_note="hulled",
-        cal_per_100g=553,
-        protein_per_100g=31.6,
-        fat_per_100g=49.0,
-        carbs_per_100g=2.8,
-        fiber_per_100g=4.0,
-        category="nuts_seeds",
-        default_min=0,
-        default_max=100,
+    "hemp_seeds": FoodEntry(
+        key="hemp_seeds", name="Hemp seeds", category="nuts_seeds",
+        unit_note="hulled", default_max=100,
+        manual_cal=553, manual_protein=31.6, manual_fat=49.0,
+        manual_carbs=2.8, manual_fiber=4.0,
     ),
     # ── Fruits ────────────────────────────────────────────────────────
-    "banana": Food(
-        name="Banana",
-        unit_note="raw",
-        cal_per_100g=89,
-        protein_per_100g=1.1,
-        fat_per_100g=0.3,
-        carbs_per_100g=23.0,
-        fiber_per_100g=2.6,
-        category="fruits",
-        default_min=0,
-        default_max=400,
+    "banana": FoodEntry(
+        key="banana", name="Banana", category="fruits",
+        unit_note="raw", default_max=400, usda_fdc_id=1105314,
     ),
-    "apple": Food(
-        name="Apple",
-        unit_note="raw",
-        cal_per_100g=52,
-        protein_per_100g=0.3,
-        fat_per_100g=0.2,
-        carbs_per_100g=14.0,
-        fiber_per_100g=2.4,
-        category="fruits",
-        default_min=0,
-        default_max=400,
+    "apple": FoodEntry(
+        key="apple", name="Apple", category="fruits",
+        unit_note="raw", default_max=400, usda_fdc_id=1750341,
     ),
-    "blueberries": Food(
-        name="Blueberries",
-        unit_note="raw",
-        cal_per_100g=57,
-        protein_per_100g=0.7,
-        fat_per_100g=0.3,
-        carbs_per_100g=14.0,
-        fiber_per_100g=2.4,
-        category="fruits",
-        default_min=0,
-        default_max=300,
+    "blueberries": FoodEntry(
+        key="blueberries", name="Blueberries", category="fruits",
+        unit_note="raw", default_max=300, usda_fdc_id=2346411,
     ),
-    "avocado": Food(
-        name="Avocado",
-        unit_note="raw",
-        cal_per_100g=160,
-        protein_per_100g=2.0,
-        fat_per_100g=15.0,
-        carbs_per_100g=8.5,
-        fiber_per_100g=6.7,
-        category="fruits",
-        default_min=0,
-        default_max=300,
+    "avocado": FoodEntry(
+        key="avocado", name="Avocado", category="fruits",
+        unit_note="raw", default_max=300, usda_fdc_id=2710824,
     ),
-    "dates_medjool": Food(
-        name="Medjool dates",
-        unit_note="pitted",
-        cal_per_100g=277,
-        protein_per_100g=1.8,
-        fat_per_100g=0.2,
-        carbs_per_100g=66.5,
-        fiber_per_100g=6.7,
-        category="fruits",
-        default_min=0,
-        default_max=200,
+    "dates_medjool": FoodEntry(
+        key="dates_medjool", name="Medjool dates", category="fruits",
+        unit_note="pitted", default_max=200,
+        manual_cal=277, manual_protein=1.8, manual_fat=0.2,
+        manual_carbs=66.5, manual_fiber=6.7,
     ),
 }
 
 
-def search(query: str, limit: int = 10) -> list[tuple[str, Food]]:
-    """Fuzzy-search foods by name, unit note, or category.
-
-    Returns (key, Food) pairs sorted by match quality.
-    Exact prefix matches rank higher than substring matches.
-    """
+def search(query: str, limit: int = 10) -> list[tuple[str, FoodEntry]]:
+    """Fuzzy-search food entries by name, unit note, or category."""
     q = query.lower().strip()
     if not q:
         return []
 
-    prefix_matches: list[tuple[str, Food]] = []
-    substring_matches: list[tuple[str, Food]] = []
+    prefix_matches: list[tuple[str, FoodEntry]] = []
+    substring_matches: list[tuple[str, FoodEntry]] = []
 
-    for key, food in FOODS.items():
-        searchable = f"{food.name} {food.unit_note} {food.category} {key}".lower()
-        name_lower = food.name.lower()
+    for key, entry in FOOD_ENTRIES.items():
+        searchable = f"{entry.name} {entry.unit_note} {entry.category} {key}".lower()
+        name_lower = entry.name.lower()
         if name_lower.startswith(q):
-            prefix_matches.append((key, food))
+            prefix_matches.append((key, entry))
         elif q in searchable:
-            substring_matches.append((key, food))
+            substring_matches.append((key, entry))
 
     return (prefix_matches + substring_matches)[:limit]

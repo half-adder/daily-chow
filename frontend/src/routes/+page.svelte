@@ -1,8 +1,48 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { fetchFoods, solve, type Food, type SolveResponse, type SolvedIngredient } from '$lib/api';
+	import { fetchFoods, solve, type Food, type SolveResponse, type SolvedIngredient, type MicroResult } from '$lib/api';
 	import IngredientRow from '$lib/components/IngredientRow.svelte';
 	import AddIngredientModal from '$lib/components/AddIngredientModal.svelte';
+
+	// ── Micronutrient display info ──────────────────────────────────
+
+	const MICRO_TIERS = [
+		{
+			name: 'Major Minerals',
+			keys: ['calcium_mg', 'iron_mg', 'magnesium_mg', 'phosphorus_mg', 'potassium_mg', 'zinc_mg', 'copper_mg', 'manganese_mg', 'selenium_mcg']
+		},
+		{
+			name: 'B-Vitamins + C',
+			keys: ['vitamin_c_mg', 'thiamin_mg', 'riboflavin_mg', 'niacin_mg', 'vitamin_b6_mg', 'folate_mcg', 'vitamin_b12_mcg']
+		},
+		{
+			name: 'Fat-Soluble Vitamins',
+			keys: ['vitamin_a_mcg', 'vitamin_d_mcg', 'vitamin_e_mg', 'vitamin_k_mcg']
+		}
+	];
+
+	const MICRO_NAMES: Record<string, { name: string; unit: string }> = {
+		calcium_mg: { name: 'Calcium', unit: 'mg' },
+		iron_mg: { name: 'Iron', unit: 'mg' },
+		magnesium_mg: { name: 'Magnesium', unit: 'mg' },
+		phosphorus_mg: { name: 'Phosphorus', unit: 'mg' },
+		potassium_mg: { name: 'Potassium', unit: 'mg' },
+		zinc_mg: { name: 'Zinc', unit: 'mg' },
+		copper_mg: { name: 'Copper', unit: 'mg' },
+		manganese_mg: { name: 'Manganese', unit: 'mg' },
+		selenium_mcg: { name: 'Selenium', unit: 'mcg' },
+		vitamin_c_mg: { name: 'Vitamin C', unit: 'mg' },
+		thiamin_mg: { name: 'Thiamin (B1)', unit: 'mg' },
+		riboflavin_mg: { name: 'Riboflavin (B2)', unit: 'mg' },
+		niacin_mg: { name: 'Niacin (B3)', unit: 'mg' },
+		vitamin_b6_mg: { name: 'Vitamin B6', unit: 'mg' },
+		folate_mcg: { name: 'Folate', unit: 'mcg' },
+		vitamin_b12_mcg: { name: 'Vitamin B12', unit: 'mcg' },
+		vitamin_a_mcg: { name: 'Vitamin A', unit: 'mcg' },
+		vitamin_d_mcg: { name: 'Vitamin D', unit: 'mcg' },
+		vitamin_e_mg: { name: 'Vitamin E', unit: 'mg' },
+		vitamin_k_mcg: { name: 'Vitamin K', unit: 'mcg' }
+	};
 
 	// ── State ────────────────────────────────────────────────────────
 
@@ -18,6 +58,14 @@
 	let calTol = $state(50);
 	let proTol = $state(5);
 	let objective = $state('minimize_oil');
+
+	// Profile
+	let sex = $state('male');
+	let ageGroup = $state('19-30');
+
+	// Micronutrient optimization
+	let optimizeNutrients = $state<Set<string>>(new Set());
+	let microsOpen = $state(false);
 
 	// Ingredients
 	interface IngredientEntry {
@@ -63,6 +111,38 @@
 		return { carb, pro, fat };
 	});
 
+	// ── Micro checkbox helpers ───────────────────────────────────────
+
+	function toggleNutrient(key: string) {
+		const next = new Set(optimizeNutrients);
+		if (next.has(key)) next.delete(key);
+		else next.add(key);
+		optimizeNutrients = next;
+		triggerSolve();
+	}
+
+	function groupState(keys: string[]): 'all' | 'none' | 'some' {
+		let checked = 0;
+		for (const k of keys) {
+			if (optimizeNutrients.has(k)) checked++;
+		}
+		if (checked === 0) return 'none';
+		if (checked === keys.length) return 'all';
+		return 'some';
+	}
+
+	function toggleGroup(keys: string[]) {
+		const state = groupState(keys);
+		const next = new Set(optimizeNutrients);
+		if (state === 'all') {
+			for (const k of keys) next.delete(k);
+		} else {
+			for (const k of keys) next.add(k);
+		}
+		optimizeNutrients = next;
+		triggerSolve();
+	}
+
 	// ── Solver ───────────────────────────────────────────────────────
 
 	let solveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -75,7 +155,10 @@
 	async function doSolve() {
 		const enabled = ingredients.filter((i) => i.enabled);
 		if (enabled.length === 0) {
-			solution = { status: 'infeasible', ingredients: [], meal_calories: 0, meal_protein: 0, meal_fiber: 0 };
+			solution = {
+				status: 'infeasible', ingredients: [], meal_calories: 0, meal_protein: 0,
+				meal_fat: 0, meal_carbs: 0, meal_fiber: 0, micros: {}
+			};
 			return;
 		}
 		solving = true;
@@ -89,7 +172,10 @@
 					cal_tolerance: calTol,
 					protein_tolerance: proTol
 				},
-				objective
+				objective,
+				sex,
+				ageGroup,
+				Array.from(optimizeNutrients)
 			);
 		} catch {
 			solution = null;
@@ -108,7 +194,10 @@
 		const state = {
 			dailyCal, dailyPro, dailyFiberMin,
 			smoothieCal, smoothiePro, smoothieFiber,
-			calTol, proTol, objective, ingredients
+			calTol, proTol, objective, ingredients,
+			sex, ageGroup,
+			optimizeNutrients: Array.from(optimizeNutrients),
+			microsOpen
 		};
 		localStorage.setItem('daily-chow', JSON.stringify(state));
 	}
@@ -128,6 +217,10 @@
 			proTol = s.proTol ?? 5;
 			objective = s.objective ?? 'minimize_oil';
 			if (s.ingredients) ingredients = s.ingredients;
+			sex = s.sex ?? 'male';
+			ageGroup = s.ageGroup ?? '19-30';
+			if (s.optimizeNutrients) optimizeNutrients = new Set(s.optimizeNutrients);
+			if (s.microsOpen !== undefined) microsOpen = s.microsOpen;
 		} catch { /* ignore corrupt state */ }
 	}
 
@@ -149,6 +242,21 @@
 	function removeIngredient(index: number) {
 		ingredients = ingredients.filter((_, i) => i !== index);
 		triggerSolve();
+	}
+
+	// ── Helpers ──────────────────────────────────────────────────────
+
+	function pctColor(pct: number): string {
+		if (pct >= 80) return '#22c55e';
+		if (pct >= 50) return '#f59e0b';
+		return '#ef4444';
+	}
+
+	function fmtMicro(val: number, unit: string): string {
+		if (unit === 'mcg') return val < 10 ? val.toFixed(1) : Math.round(val).toString();
+		if (val < 1) return val.toFixed(2);
+		if (val < 10) return val.toFixed(1);
+		return Math.round(val).toString();
 	}
 
 	// ── Init ─────────────────────────────────────────────────────────
@@ -208,6 +316,26 @@
 						<option value="minimize_oil">Minimize oil</option>
 						<option value="minimize_rice_deviation">Minimize rice deviation</option>
 						<option value="minimize_total_grams">Minimize total grams</option>
+					</select>
+				</div>
+			</div>
+			<div class="target-group">
+				<label>Sex</label>
+				<div class="target-input-row">
+					<select bind:value={sex} onchange={triggerSolve}>
+						<option value="male">Male</option>
+						<option value="female">Female</option>
+					</select>
+				</div>
+			</div>
+			<div class="target-group">
+				<label>Age</label>
+				<div class="target-input-row">
+					<select bind:value={ageGroup} onchange={triggerSolve}>
+						<option value="19-30">19-30</option>
+						<option value="31-50">31-50</option>
+						<option value="51-70">51-70</option>
+						<option value="71+">71+</option>
 					</select>
 				</div>
 			</div>
@@ -291,6 +419,65 @@
 			<div class="solving">Solving...</div>
 		{/if}
 	</section>
+
+	<!-- ── Micronutrient Report ─────────────────────────────────── -->
+	{#if solution && solution.status !== 'infeasible' && solution.micros}
+		<section class="micros-section">
+			<button class="micros-toggle" onclick={() => { microsOpen = !microsOpen; saveState(); }}>
+				<span class="micros-arrow" class:open={microsOpen}>▸</span>
+				Micronutrients
+				{#if optimizeNutrients.size > 0}
+					<span class="micros-badge">{optimizeNutrients.size} optimized</span>
+				{/if}
+			</button>
+
+			{#if microsOpen}
+				<div class="micros-content">
+					{#each MICRO_TIERS as tier}
+						{@const gs = groupState(tier.keys)}
+						<div class="micro-group">
+							<label class="micro-group-header">
+								<input
+									type="checkbox"
+									checked={gs === 'all'}
+									indeterminate={gs === 'some'}
+									onchange={() => toggleGroup(tier.keys)}
+								/>
+								<span class="micro-group-name">{tier.name}</span>
+							</label>
+							<div class="micro-items">
+								{#each tier.keys as key}
+									{@const m = solution.micros[key]}
+									{@const info = MICRO_NAMES[key]}
+									{#if m && info}
+										{@const barPct = Math.min(m.pct, 100)}
+										<label class="micro-row" class:dimmed={!optimizeNutrients.has(key)}>
+											<input
+												type="checkbox"
+												checked={optimizeNutrients.has(key)}
+												onchange={() => toggleNutrient(key)}
+											/>
+											<span class="micro-name">{info.name}</span>
+											<div class="micro-bar-track">
+												<div
+													class="micro-bar-fill"
+													style="width: {barPct}%; background: {pctColor(m.pct)}"
+												></div>
+											</div>
+											<span class="micro-pct" style="color: {pctColor(m.pct)}">{Math.round(m.pct)}%</span>
+											<span class="micro-amounts">
+												{fmtMicro(m.total + m.smoothie, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
+											</span>
+										</label>
+									{/if}
+								{/each}
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</section>
+	{/if}
 </div>
 
 {#if showAddModal}
@@ -383,7 +570,7 @@
 
 	.target-group select {
 		width: auto;
-		min-width: 160px;
+		min-width: 100px;
 	}
 
 	.target-group input:focus,
@@ -596,5 +783,157 @@
 
 	.macro-fat {
 		background: #a855f7;
+	}
+
+	/* ── Micronutrients ──────────────────────────────── */
+
+	.micros-section {
+		background: #0f172a;
+		border: 1px solid #1e293b;
+		border-radius: 12px;
+		margin-top: 16px;
+		overflow: hidden;
+	}
+
+	.micros-toggle {
+		width: 100%;
+		padding: 14px 20px;
+		background: none;
+		border: none;
+		color: #e2e8f0;
+		font-size: 15px;
+		font-weight: 600;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		text-align: left;
+		transition: background 0.15s;
+	}
+
+	.micros-toggle:hover {
+		background: #1e293b44;
+	}
+
+	.micros-arrow {
+		display: inline-block;
+		transition: transform 0.15s;
+		font-size: 14px;
+		color: #64748b;
+	}
+
+	.micros-arrow.open {
+		transform: rotate(90deg);
+	}
+
+	.micros-badge {
+		font-size: 11px;
+		font-weight: 500;
+		color: #3b82f6;
+		background: #1e3a5f;
+		padding: 2px 8px;
+		border-radius: 10px;
+		margin-left: auto;
+	}
+
+	.micros-content {
+		padding: 0 20px 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.micro-group {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.micro-group-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 0;
+		cursor: pointer;
+	}
+
+	.micro-group-header input[type='checkbox'] {
+		accent-color: #3b82f6;
+		width: 15px;
+		height: 15px;
+		cursor: pointer;
+	}
+
+	.micro-group-name {
+		font-size: 12px;
+		font-weight: 600;
+		color: #94a3b8;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.micro-items {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		padding-left: 4px;
+	}
+
+	.micro-row {
+		display: grid;
+		grid-template-columns: 20px 120px 1fr 48px 120px;
+		gap: 8px;
+		align-items: center;
+		padding: 4px 0;
+		cursor: pointer;
+		transition: opacity 0.15s;
+	}
+
+	.micro-row.dimmed {
+		opacity: 0.45;
+	}
+
+	.micro-row:hover {
+		opacity: 1;
+	}
+
+	.micro-row input[type='checkbox'] {
+		accent-color: #3b82f6;
+		width: 14px;
+		height: 14px;
+		cursor: pointer;
+	}
+
+	.micro-name {
+		font-size: 13px;
+		color: #cbd5e1;
+	}
+
+	.micro-bar-track {
+		height: 8px;
+		background: #1e293b;
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.micro-bar-fill {
+		height: 100%;
+		border-radius: 4px;
+		transition: width 0.3s ease;
+		min-width: 2px;
+	}
+
+	.micro-pct {
+		font-size: 13px;
+		font-weight: 600;
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.micro-amounts {
+		font-size: 12px;
+		color: #64748b;
+		font-variant-numeric: tabular-nums;
+		text-align: right;
 	}
 </style>

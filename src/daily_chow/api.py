@@ -6,8 +6,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from daily_chow.food_db import FOODS
+from daily_chow.dri import (
+    DRI_TARGETS,
+    MICRO_INFO,
+    SMOOTHIE_MICROS,
+    AgeGroup,
+    Sex,
+    remaining_targets,
+)
 from daily_chow.solver import IngredientInput, Objective, Targets, solve
+from daily_chow.usda import load_foods
 
 app = FastAPI(title="Daily Chow API")
 
@@ -40,6 +48,9 @@ class SolveRequest(BaseModel):
     ingredients: list[IngredientRequest]
     targets: TargetsRequest = TargetsRequest()
     objective: str = "minimize_oil"
+    sex: str = "male"
+    age_group: str = "19-30"
+    optimize_nutrients: list[str] = []
 
 
 class SolvedIngredientResponse(BaseModel):
@@ -52,6 +63,15 @@ class SolvedIngredientResponse(BaseModel):
     fiber: float
 
 
+class MicroResult(BaseModel):
+    total: float  # amount from the meal
+    smoothie: float  # amount from smoothie
+    dri: float  # full daily target
+    remaining: float  # max(0, dri - smoothie)
+    pct: float  # (total + smoothie) / dri * 100
+    optimized: bool  # whether this was in optimize_nutrients
+
+
 class SolveResponse(BaseModel):
     status: str
     ingredients: list[SolvedIngredientResponse]
@@ -60,6 +80,7 @@ class SolveResponse(BaseModel):
     meal_fat: float
     meal_carbs: float
     meal_fiber: float
+    micros: dict[str, MicroResult] = {}
 
 
 class FoodResponse(BaseModel):
@@ -73,6 +94,7 @@ class FoodResponse(BaseModel):
     category: str
     default_min: int
     default_max: int
+    micros: dict[str, float] = {}
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────
@@ -80,6 +102,7 @@ class FoodResponse(BaseModel):
 
 @app.get("/foods")
 def get_foods() -> dict[str, FoodResponse]:
+    foods = load_foods()
     return {
         key: FoodResponse(
             name=f.name,
@@ -92,16 +115,18 @@ def get_foods() -> dict[str, FoodResponse]:
             category=f.category,
             default_min=f.default_min,
             default_max=f.default_max,
+            micros=f.micros,
         )
-        for key, f in FOODS.items()
+        for key, f in foods.items()
     }
 
 
 @app.post("/solve")
 def post_solve(req: SolveRequest) -> SolveResponse:
+    foods = load_foods()
     ingredient_inputs = []
     for ing in req.ingredients:
-        food = FOODS.get(ing.key)
+        food = foods.get(ing.key)
         if food is None:
             continue
         min_g = min(ing.min_g, ing.max_g)
@@ -116,8 +141,40 @@ def post_solve(req: SolveRequest) -> SolveResponse:
         protein_tolerance=req.targets.protein_tolerance,
     )
 
+    # Build micro targets for checked nutrients
+    sex = Sex(req.sex)
+    age_group = AgeGroup(req.age_group)
+    all_remaining = remaining_targets(sex, age_group)
+
+    micro_targets: dict[str, float] | None = None
+    if req.optimize_nutrients:
+        micro_targets = {
+            k: all_remaining[k]
+            for k in req.optimize_nutrients
+            if k in all_remaining
+        }
+
     objective = Objective(req.objective)
-    solution = solve(ingredient_inputs, targets, objective)
+    solution = solve(ingredient_inputs, targets, objective, micro_targets=micro_targets)
+
+    # Build micro results for all 20 tracked nutrients
+    dri = DRI_TARGETS[(sex, age_group)]
+    optimized_set = set(req.optimize_nutrients)
+    micros: dict[str, MicroResult] = {}
+    for key in MICRO_INFO:
+        dri_val = dri.get(key, 0.0)
+        smoothie_val = SMOOTHIE_MICROS.get(key, 0.0)
+        remaining_val = max(0.0, dri_val - smoothie_val)
+        meal_total = solution.micro_totals.get(key, 0.0)
+        pct = (meal_total + smoothie_val) / dri_val * 100 if dri_val > 0 else 0.0
+        micros[key] = MicroResult(
+            total=round(meal_total, 2),
+            smoothie=round(smoothie_val, 2),
+            dri=round(dri_val, 2),
+            remaining=round(remaining_val, 2),
+            pct=round(pct, 1),
+            optimized=key in optimized_set,
+        )
 
     return SolveResponse(
         status=solution.status,
@@ -138,4 +195,5 @@ def post_solve(req: SolveRequest) -> SolveResponse:
         meal_fat=solution.meal_fat,
         meal_carbs=solution.meal_carbs,
         meal_fiber=solution.meal_fiber,
+        micros=micros,
     )
