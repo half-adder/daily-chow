@@ -251,15 +251,19 @@ def solve(
         primary_expr = total_grams
         max_primary = max_total
 
-    # Build lexicographic objective: primary >> micro >> tiebreaker
-    # terms = [(expression, max_value)] in priority order
+    # Build lexicographic objective: primary >> secondary
+    # When micro optimization is active, blend micro shortfall with total
+    # grams so the solver balances nutrient coverage against meal size.
+    # Filling one full nutrient gap is worth ~200g of extra food.
+    GRAMS_PER_GAP = 200
     terms: list[tuple[cp_model.LinearExprT, int]] = [(primary_expr, max_primary)]
 
     if max_micro_penalty > 0:
-        terms.append((micro_penalty, max_micro_penalty))
-
-    # Tiebreaker (total grams) — skip when primary IS total_grams
-    if objective != Objective.MINIMIZE_TOTAL_GRAMS:
+        grams_cost = max(1, MICRO_NORM // GRAMS_PER_GAP)
+        blended = micro_penalty + total_grams * grams_cost
+        max_blended = max_micro_penalty + max_total * grams_cost
+        terms.append((blended, max_blended))
+    elif objective != Objective.MINIMIZE_TOTAL_GRAMS:
         terms.append((total_grams, max_total))
 
     # Compute weights: w[-1]=1, w[i] = max[i+1] * w[i+1] + 1

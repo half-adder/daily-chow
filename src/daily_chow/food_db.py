@@ -24,6 +24,8 @@ class FoodEntry:
     manual_fat: float | None = None
     manual_carbs: float | None = None
     manual_fiber: float | None = None
+    # Fallback micros for foods without USDA Foundation Foods data (per 100g)
+    manual_micros: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +60,7 @@ FOOD_ENTRIES: dict[str, FoodEntry] = {
     "oats_dry": FoodEntry(
         key="oats_dry", name="Oats", category="grains",
         unit_note="dry", default_max=300, usda_fdc_id=2346396,
+        manual_fiber=10.6,
     ),
     "quinoa_dry": FoodEntry(
         key="quinoa_dry", name="Quinoa", category="grains",
@@ -84,10 +87,12 @@ FOOD_ENTRIES: dict[str, FoodEntry] = {
     "sweet_potato_raw": FoodEntry(
         key="sweet_potato_raw", name="Sweet potato", category="grains",
         unit_note="raw", default_max=500, usda_fdc_id=2346404,
+        manual_fiber=3.0,
     ),
     "potato_raw": FoodEntry(
         key="potato_raw", name="Potato", category="grains",
         unit_note="raw", default_max=500, usda_fdc_id=2346401,
+        manual_fiber=2.1,
     ),
     # ── Vegetables ────────────────────────────────────────────────────
     "broccoli_raw": FoodEntry(
@@ -129,10 +134,12 @@ FOOD_ENTRIES: dict[str, FoodEntry] = {
     "cabbage_raw": FoodEntry(
         key="cabbage_raw", name="Cabbage", category="vegetables",
         unit_note="raw", default_max=400, usda_fdc_id=2346407,
+        manual_fiber=2.5,
     ),
     "cucumber_raw": FoodEntry(
         key="cucumber_raw", name="Cucumber", category="vegetables",
         unit_note="raw", default_max=400, usda_fdc_id=2346406,
+        manual_fiber=0.5,
     ),
     "mushrooms_raw": FoodEntry(
         key="mushrooms_raw", name="Mushrooms", category="vegetables",
@@ -154,28 +161,43 @@ FOOD_ENTRIES: dict[str, FoodEntry] = {
     "black_beans_cooked": FoodEntry(
         key="black_beans_cooked", name="Black beans", category="legumes",
         unit_note="cooked", default_max=400, usda_fdc_id=2644285,
+        manual_fiber=8.7,
     ),
     "yellow_split_peas_dry": FoodEntry(
         key="yellow_split_peas_dry", name="Yellow split peas", category="legumes",
         unit_note="dry", default_max=150,
         manual_cal=352, manual_protein=24.0, manual_fat=1.2,
         manual_carbs=60.0, manual_fiber=25.0,
+        # SR Legacy NDB 16085 — no Foundation Foods entry
+        manual_micros={
+            "calcium_mg": 55.0, "iron_mg": 4.43, "magnesium_mg": 115.0,
+            "phosphorus_mg": 366.0, "potassium_mg": 981.0, "zinc_mg": 3.01,
+            "copper_mg": 0.86, "manganese_mg": 1.21, "selenium_mcg": 1.6,
+            "vitamin_c_mg": 1.8, "thiamin_mg": 0.73, "riboflavin_mg": 0.22,
+            "niacin_mg": 2.89, "vitamin_b6_mg": 0.17, "folate_mcg": 274.0,
+            "vitamin_b12_mcg": 0.0, "vitamin_a_mcg": 7.0, "vitamin_d_mcg": 0.0,
+            "vitamin_e_mg": 0.39, "vitamin_k_mcg": 14.5,
+        },
     ),
     "lentils_dry": FoodEntry(
         key="lentils_dry", name="Lentils", category="legumes",
         unit_note="dry", default_max=200, usda_fdc_id=2644283,
+        manual_fiber=10.7,
     ),
     "chickpeas_cooked": FoodEntry(
         key="chickpeas_cooked", name="Chickpeas", category="legumes",
         unit_note="cooked", default_max=400, usda_fdc_id=2644288,
+        manual_fiber=7.6,
     ),
     "kidney_beans_cooked": FoodEntry(
         key="kidney_beans_cooked", name="Kidney beans", category="legumes",
         unit_note="cooked", default_max=400, usda_fdc_id=2644289,
+        manual_fiber=6.4,
     ),
     "pinto_beans_cooked": FoodEntry(
         key="pinto_beans_cooked", name="Pinto beans", category="legumes",
         unit_note="cooked", default_max=400, usda_fdc_id=2644292,
+        manual_fiber=9.0,
     ),
     "edamame_shelled": FoodEntry(
         key="edamame_shelled", name="Edamame", category="legumes",
@@ -298,6 +320,7 @@ FOOD_ENTRIES: dict[str, FoodEntry] = {
     "chia_seeds": FoodEntry(
         key="chia_seeds", name="Chia seeds", category="nuts_seeds",
         default_max=100, usda_fdc_id=2710819,
+        manual_fiber=34.4,
     ),
     "flax_seeds": FoodEntry(
         key="flax_seeds", name="Flax seeds", category="nuts_seeds",
@@ -321,10 +344,12 @@ FOOD_ENTRIES: dict[str, FoodEntry] = {
     "blueberries": FoodEntry(
         key="blueberries", name="Blueberries", category="fruits",
         unit_note="raw", default_max=300, usda_fdc_id=2346411,
+        manual_fiber=2.4,
     ),
     "avocado": FoodEntry(
         key="avocado", name="Avocado", category="fruits",
         unit_note="raw", default_max=300, usda_fdc_id=2710824,
+        manual_fiber=6.7,
     ),
     "dates_medjool": FoodEntry(
         key="dates_medjool", name="Medjool dates", category="fruits",

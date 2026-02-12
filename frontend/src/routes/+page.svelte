@@ -3,6 +3,8 @@
 	import { fetchFoods, solve, type Food, type SolveResponse, type SolvedIngredient, type MicroResult } from '$lib/api';
 	import IngredientRow from '$lib/components/IngredientRow.svelte';
 	import AddIngredientModal from '$lib/components/AddIngredientModal.svelte';
+	import StackedBar from '$lib/components/StackedBar.svelte';
+	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
 
 	// ── Micronutrient display info ──────────────────────────────────
 
@@ -59,6 +61,20 @@
 	let proTol = $state(5);
 	let objective = $state('minimize_oil');
 
+	// Slider scale
+	let sliderAbsMax = $state(500);
+
+	// Clamp ingredient bounds when absMax changes
+	$effect(() => {
+		const cap = sliderAbsMax;
+		let changed = false;
+		for (const ing of ingredients) {
+			if (ing.maxG > cap) { ing.maxG = cap; changed = true; }
+			if (ing.minG > cap) { ing.minG = cap; changed = true; }
+		}
+		if (changed) triggerSolve();
+	});
+
 	// Profile
 	let sex = $state('male');
 	let ageGroup = $state('19-30');
@@ -73,23 +89,29 @@
 		enabled: boolean;
 		minG: number;
 		maxG: number;
+		color: string;
 	}
 
 	let ingredients = $state<IngredientEntry[]>([
-		{ key: 'white_rice_dry', enabled: true, minG: 0, maxG: 400 },
-		{ key: 'broccoli_raw', enabled: true, minG: 200, maxG: 400 },
-		{ key: 'carrots_raw', enabled: true, minG: 150, maxG: 300 },
-		{ key: 'zucchini_raw', enabled: true, minG: 250, maxG: 500 },
-		{ key: 'avocado_oil', enabled: true, minG: 0, maxG: 100 },
-		{ key: 'black_beans_cooked', enabled: true, minG: 150, maxG: 400 },
-		{ key: 'yellow_split_peas_dry', enabled: true, minG: 60, maxG: 150 },
-		{ key: 'ground_beef_80_20_raw', enabled: true, minG: 0, maxG: 1000 },
-		{ key: 'chicken_thigh_raw', enabled: true, minG: 0, maxG: 1000 },
+		{ key: 'white_rice_dry', enabled: true, minG: 0, maxG: 400, color: INGREDIENT_COLORS[0] },
+		{ key: 'broccoli_raw', enabled: true, minG: 200, maxG: 400, color: INGREDIENT_COLORS[1] },
+		{ key: 'carrots_raw', enabled: true, minG: 150, maxG: 300, color: INGREDIENT_COLORS[2] },
+		{ key: 'zucchini_raw', enabled: true, minG: 250, maxG: 500, color: INGREDIENT_COLORS[3] },
+		{ key: 'avocado_oil', enabled: true, minG: 0, maxG: 100, color: INGREDIENT_COLORS[4] },
+		{ key: 'black_beans_cooked', enabled: true, minG: 150, maxG: 400, color: INGREDIENT_COLORS[5] },
+		{ key: 'yellow_split_peas_dry', enabled: true, minG: 60, maxG: 150, color: INGREDIENT_COLORS[6] },
+		{ key: 'ground_beef_80_20_raw', enabled: true, minG: 0, maxG: 1000, color: INGREDIENT_COLORS[7] },
+		{ key: 'chicken_thigh_raw', enabled: true, minG: 0, maxG: 1000, color: INGREDIENT_COLORS[8] },
 	]);
 
 	let solution = $state<SolveResponse | null>(null);
 	let showAddModal = $state(false);
 	let solving = $state(false);
+
+	// Expand states
+	let expandedIngredient = $state<string | null>(null);
+	let expandedMacro = $state(false);
+	let expandedMicro = $state<string | null>(null);
 
 	// Derived
 	let mealCal = $derived(dailyCal - smoothieCal);
@@ -97,6 +119,19 @@
 	let mealFiberMin = $derived(dailyFiberMin - smoothieFiber);
 
 	let existingKeys = $derived(new Set(ingredients.map((i) => i.key)));
+
+	// Ingredient color map for stacked bars
+	let ingredientColorMap = $derived(
+		new Map(ingredients.map((i) => [i.key, i.color]))
+	);
+
+	// Per-ingredient contributions (derived from solution)
+	let contributions = $derived.by(() => {
+		if (!solution || solution.status === 'infeasible') return new Map<string, IngredientContribution>();
+		const contribs = computeContributions(solution, foods);
+		enrichWithDri(contribs, solution.micros);
+		return contribs;
+	});
 
 	let macroPcts = $derived.by(() => {
 		if (!solution || solution.status === 'infeasible') return null;
@@ -197,7 +232,7 @@
 			calTol, proTol, objective, ingredients,
 			sex, ageGroup,
 			optimizeNutrients: Array.from(optimizeNutrients),
-			microsOpen
+			microsOpen, sliderAbsMax
 		};
 		localStorage.setItem('daily-chow', JSON.stringify(state));
 	}
@@ -216,11 +251,22 @@
 			calTol = s.calTol ?? 50;
 			proTol = s.proTol ?? 5;
 			objective = s.objective ?? 'minimize_oil';
-			if (s.ingredients) ingredients = s.ingredients;
+			if (s.ingredients) {
+				ingredients = s.ingredients;
+				// Backfill colors for ingredients saved before color support
+				const usedColors = ingredients.filter((i) => i.color).map((i) => i.color);
+				for (const ing of ingredients) {
+					if (!ing.color) {
+						ing.color = assignColor(usedColors);
+						usedColors.push(ing.color);
+					}
+				}
+			}
 			sex = s.sex ?? 'male';
 			ageGroup = s.ageGroup ?? '19-30';
 			if (s.optimizeNutrients) optimizeNutrients = new Set(s.optimizeNutrients);
 			if (s.microsOpen !== undefined) microsOpen = s.microsOpen;
+			if (s.sliderAbsMax) sliderAbsMax = s.sliderAbsMax;
 		} catch { /* ignore corrupt state */ }
 	}
 
@@ -229,11 +275,13 @@
 	function addIngredient(key: string) {
 		const food = foods[key];
 		if (!food) return;
+		const usedColors = ingredients.map((i) => i.color);
 		ingredients = [...ingredients, {
 			key,
 			enabled: true,
 			minG: food.default_min,
-			maxG: food.default_max
+			maxG: food.default_max,
+			color: assignColor(usedColors)
 		}];
 		showAddModal = false;
 		triggerSolve();
@@ -257,6 +305,44 @@
 		if (val < 1) return val.toFixed(2);
 		if (val < 10) return val.toFixed(1);
 		return Math.round(val).toString();
+	}
+
+	function macroStackedSegments(macro: 'cal' | 'pro' | 'fat' | 'carb' | 'fiber') {
+		if (!solution || solution.status === 'infeasible') return [];
+		return solution.ingredients
+			.map((ing) => {
+				const contrib = contributions.get(ing.key);
+				const color = ingredientColorMap.get(ing.key) ?? '#666';
+				const food = foods[ing.key];
+				const name = food?.name ?? ing.key;
+				const pct = contrib?.macroPcts[macro] ?? 0;
+				let val = 0;
+				if (macro === 'cal') val = ing.calories;
+				else if (macro === 'pro') val = ing.protein;
+				else if (macro === 'fat') val = ing.fat;
+				else if (macro === 'carb') val = ing.carbs;
+				else val = ing.fiber;
+				return { key: ing.key, label: name, value: `${Math.round(val)}${macro === 'cal' ? ' kcal' : 'g'}`, pct, color };
+			})
+			.filter((s) => s.pct > 0.5);
+	}
+
+	function microStackedSegments(microKey: string) {
+		if (!solution || solution.status === 'infeasible') return [];
+		const mr = solution.micros[microKey];
+		if (!mr || mr.dri <= 0) return [];
+		return solution.ingredients
+			.map((ing) => {
+				const food = foods[ing.key];
+				if (!food) return null;
+				const per100g = food.micros[microKey] ?? 0;
+				const amount = (per100g * ing.grams) / 100;
+				const pctOfDri = (amount / mr.dri) * 100;
+				const color = ingredientColorMap.get(ing.key) ?? '#666';
+				const info = MICRO_NAMES[microKey];
+				return { key: ing.key, label: food.name, value: `${fmtMicro(amount, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pctOfDri, color };
+			})
+			.filter((s): s is NonNullable<typeof s> => s !== null && s.pct > 0.5);
 	}
 
 	// ── Init ─────────────────────────────────────────────────────────
@@ -339,6 +425,16 @@
 					</select>
 				</div>
 			</div>
+			<div class="target-group">
+				<label>Max / ingr</label>
+				<div class="target-input-row">
+					<input type="number" value={sliderAbsMax} onchange={(e) => {
+						const val = parseInt((e.target as HTMLInputElement).value);
+						if (!isNaN(val) && val > 0) sliderAbsMax = val;
+					}} />
+					<span class="unit">g</span>
+				</div>
+			</div>
 		</div>
 		<div class="smoothie-row">
 			Smoothie:
@@ -364,13 +460,18 @@
 				<IngredientRow
 					ingredientKey={ing.key}
 					food={foods[ing.key]}
+					color={ing.color}
 					bind:enabled={ing.enabled}
 					bind:minG={ing.minG}
 					bind:maxG={ing.maxG}
+					absMax={sliderAbsMax}
 					solved={getSolved(ing.key)}
+					contribution={contributions.get(ing.key) ?? null}
+					expanded={expandedIngredient === ing.key}
 					onchange={triggerSolve}
 					ontoggle={() => triggerSolve()}
 					onremove={() => removeIngredient(i)}
+					onexpand={() => { expandedIngredient = expandedIngredient === ing.key ? null : ing.key; }}
 				/>
 			{/if}
 		{/each}
@@ -395,7 +496,8 @@
 					<span class="total-fib">{Math.round(solution.meal_fiber + smoothieFiber)}g fiber</span>
 				</div>
 				{#if macroPcts}
-					<div class="macro-bar">
+					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+					<div class="macro-bar clickable" onclick={() => { expandedMacro = !expandedMacro; }}>
 						<div class="macro-segment macro-carbs" style="width: {macroPcts.carb}%">
 							{#if macroPcts.carb >= 10}<span>carb {macroPcts.carb}%</span>{/if}
 						</div>
@@ -406,6 +508,30 @@
 							{#if macroPcts.fat >= 10}<span>fat {macroPcts.fat}%</span>{/if}
 						</div>
 					</div>
+					{#if expandedMacro}
+						<div class="macro-breakdown">
+							<div class="breakdown-row">
+								<span class="breakdown-label">Calories</span>
+								<StackedBar segments={macroStackedSegments('cal')} />
+							</div>
+							<div class="breakdown-row">
+								<span class="breakdown-label">Protein</span>
+								<StackedBar segments={macroStackedSegments('pro')} />
+							</div>
+							<div class="breakdown-row">
+								<span class="breakdown-label">Fat</span>
+								<StackedBar segments={macroStackedSegments('fat')} />
+							</div>
+							<div class="breakdown-row">
+								<span class="breakdown-label">Carbs</span>
+								<StackedBar segments={macroStackedSegments('carb')} />
+							</div>
+							<div class="breakdown-row">
+								<span class="breakdown-label">Fiber</span>
+								<StackedBar segments={macroStackedSegments('fiber')} />
+							</div>
+						</div>
+					{/if}
 				{/if}
 				<div class="total-status" class:feasible={solution.status !== 'infeasible'} class:infeasible={solution.status === 'infeasible'}>
 					{#if solution.status === 'infeasible'}
@@ -451,24 +577,40 @@
 									{@const info = MICRO_NAMES[key]}
 									{#if m && info}
 										{@const barPct = Math.min(m.pct, 100)}
-										<label class="micro-row" class:dimmed={!optimizeNutrients.has(key)}>
-											<input
-												type="checkbox"
-												checked={optimizeNutrients.has(key)}
-												onchange={() => toggleNutrient(key)}
-											/>
-											<span class="micro-name">{info.name}</span>
-											<div class="micro-bar-track">
-												<div
-													class="micro-bar-fill"
-													style="width: {barPct}%; background: {pctColor(m.pct)}"
-												></div>
-											</div>
-											<span class="micro-pct" style="color: {pctColor(m.pct)}">{Math.round(m.pct)}%</span>
-											<span class="micro-amounts">
-												{fmtMicro(m.total + m.smoothie, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
-											</span>
-										</label>
+										<div class="micro-row-wrapper">
+											<label class="micro-row" class:dimmed={!optimizeNutrients.has(key)}>
+												<input
+													type="checkbox"
+													checked={optimizeNutrients.has(key)}
+													onchange={() => toggleNutrient(key)}
+												/>
+												<span class="micro-name">{info.name}</span>
+												<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+												<div class="micro-bar-track clickable" onclick={(e) => { e.preventDefault(); expandedMicro = expandedMicro === key ? null : key; }}>
+													{#if expandedMicro === key}
+														<div class="micro-bar-stacked">
+															{#each microStackedSegments(key) as seg (seg.key)}
+																<div class="micro-bar-segment" style="width: {seg.pct}%; background: {seg.color}" title="{seg.label}: {seg.value}"></div>
+															{/each}
+														</div>
+													{:else}
+														<div
+															class="micro-bar-fill"
+															style="width: {barPct}%; background: {pctColor(m.pct)}"
+														></div>
+													{/if}
+												</div>
+												<span class="micro-pct" style="color: {pctColor(m.pct)}">{Math.round(m.pct)}%</span>
+												<span class="micro-amounts">
+													{fmtMicro(m.total + m.smoothie, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
+												</span>
+											</label>
+											{#if expandedMicro === key}
+												<div class="micro-breakdown">
+													<StackedBar segments={microStackedSegments(key)} height={16} />
+												</div>
+											{/if}
+										</div>
 									{/if}
 								{/each}
 							</div>
@@ -484,6 +626,7 @@
 	<AddIngredientModal
 		{foods}
 		{existingKeys}
+		microResults={solution?.micros ?? {}}
 		onselect={addIngredient}
 		onclose={() => (showAddModal = false)}
 	/>
@@ -935,5 +1078,54 @@
 		color: #64748b;
 		font-variant-numeric: tabular-nums;
 		text-align: right;
+	}
+
+	/* ── Clickable / Expandable ──────────────────────── */
+
+	.clickable {
+		cursor: pointer;
+	}
+
+	.macro-breakdown {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 8px 0 4px;
+	}
+
+	.breakdown-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.breakdown-label {
+		font-size: 11px;
+		color: #64748b;
+		text-transform: uppercase;
+		width: 60px;
+		flex-shrink: 0;
+	}
+
+	.micro-row-wrapper {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.micro-bar-stacked {
+		display: flex;
+		height: 100%;
+		border-radius: 4px;
+		overflow: hidden;
+	}
+
+	.micro-bar-segment {
+		height: 100%;
+		min-width: 1px;
+		transition: width 0.3s ease;
+	}
+
+	.micro-breakdown {
+		padding: 4px 0 6px 28px;
 	}
 </style>

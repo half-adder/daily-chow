@@ -1,36 +1,48 @@
 <script lang="ts">
-	import type { Food } from '$lib/api';
+	import type { Food, MicroResult } from '$lib/api';
+	import { computeGapScore, countGapsFilled } from '$lib/contributions';
 
 	interface Props {
 		foods: Record<string, Food>;
 		existingKeys: Set<string>;
+		microResults: Record<string, MicroResult>;
 		onselect: (key: string) => void;
 		onclose: () => void;
 	}
 
-	let { foods, existingKeys, onselect, onclose }: Props = $props();
+	let { foods, existingKeys, microResults, onselect, onclose }: Props = $props();
 
 	let query = $state('');
 
+	let hasMicroData = $derived(Object.keys(microResults).length > 0);
+
 	let results = $derived.by(() => {
 		const q = query.toLowerCase().trim();
-		if (!q) {
-			return Object.entries(foods)
-				.filter(([k]) => !existingKeys.has(k))
-				.slice(0, 12);
+		let entries = Object.entries(foods).filter(([k]) => !existingKeys.has(k));
+
+		if (q) {
+			entries = entries
+				.filter(([key, food]) => {
+					const searchable = `${food.name} ${food.unit_note} ${food.category} ${key}`.toLowerCase();
+					return searchable.includes(q);
+				})
+				.sort(([, a], [, b]) => {
+					const aStarts = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+					const bStarts = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+					if (aStarts !== bStarts) return aStarts - bStarts;
+					// Tiebreak by gap score
+					if (hasMicroData) {
+						return computeGapScore('', b, microResults) - computeGapScore('', a, microResults);
+					}
+					return 0;
+				});
+		} else if (hasMicroData) {
+			entries = entries.sort(([, a], [, b]) => {
+				return computeGapScore('', b, microResults) - computeGapScore('', a, microResults);
+			});
 		}
-		return Object.entries(foods)
-			.filter(([key, food]) => {
-				if (existingKeys.has(key)) return false;
-				const searchable = `${food.name} ${food.unit_note} ${food.category} ${key}`.toLowerCase();
-				return searchable.includes(q);
-			})
-			.sort(([, a], [, b]) => {
-				const aStarts = a.name.toLowerCase().startsWith(q) ? 0 : 1;
-				const bStarts = b.name.toLowerCase().startsWith(q) ? 0 : 1;
-				return aStarts - bStarts;
-			})
-			.slice(0, 12);
+
+		return entries.slice(0, 16);
 	});
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -59,13 +71,19 @@
 
 		<div class="results">
 			{#each results as [key, food]}
+				{@const gaps = hasMicroData ? countGapsFilled(food, microResults) : 0}
 				<button class="result-item" onclick={() => onselect(key)}>
 					<span class="result-name">{food.name}</span>
 					<span class="result-note">{food.unit_note}</span>
 					<span class="result-macros">
 						{food.cal_per_100g} kcal · {food.protein_per_100g}g pro · {food.fiber_per_100g}g fiber
 					</span>
-					<span class="result-category">{food.category}</span>
+					<span class="result-meta">
+						{#if gaps > 0}
+							<span class="result-gaps">fills {gaps} gap{gaps !== 1 ? 's' : ''}</span>
+						{/if}
+						<span class="result-category">{food.category}</span>
+					</span>
 				</button>
 			{:else}
 				<div class="no-results">No matching foods</div>
@@ -167,14 +185,6 @@
 		font-weight: 500;
 	}
 
-	.result-category {
-		font-size: 11px;
-		color: #3b82f6;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		justify-self: end;
-	}
-
 	.result-note {
 		font-size: 12px;
 		color: #64748b;
@@ -183,7 +193,28 @@
 	.result-macros {
 		font-size: 12px;
 		color: #64748b;
+	}
+
+	.result-meta {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 		justify-self: end;
+	}
+
+	.result-gaps {
+		font-size: 11px;
+		color: #22c55e;
+		background: rgba(34, 197, 94, 0.1);
+		padding: 1px 6px;
+		border-radius: 8px;
+	}
+
+	.result-category {
+		font-size: 11px;
+		color: #3b82f6;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
 	.no-results {

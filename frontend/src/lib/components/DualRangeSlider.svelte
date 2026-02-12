@@ -20,8 +20,12 @@
 	function pct(val: number): number {
 		const span = absMax - absMin;
 		if (span <= 0) return 0;
-		return ((val - absMin) / span) * 100;
+		return Math.max(0, Math.min(100, ((val - absMin) / span) * 100));
 	}
+
+	// Clamped display values — the slider shows these but doesn't write back on absMax change
+	let displayMin = $derived(Math.max(absMin, Math.min(min, absMax)));
+	let displayMax = $derived(Math.max(absMin, Math.min(max, absMax)));
 
 	function handleMinInput(e: Event) {
 		const val = parseInt((e.target as HTMLInputElement).value);
@@ -57,16 +61,16 @@
 			type="range"
 			min={absMin}
 			max={absMax}
-			bind:value={min}
-			oninput={() => { min = Math.min(min, max); onchange?.(min, max); }}
+			value={displayMin}
+			oninput={handleMinInput}
 			class="thumb thumb-min"
 		/>
 		<input
 			type="range"
 			min={absMin}
 			max={absMax}
-			bind:value={max}
-			oninput={() => { max = Math.max(max, min); onchange?.(min, max); }}
+			value={displayMax}
+			oninput={handleMaxInput}
 			class="thumb thumb-max"
 		/>
 	</div>

@@ -87,6 +87,12 @@ def _build_food(entry: FoodEntry, usda_data: dict[str, dict]) -> Food:
     if fiber == 0.0 and entry.manual_fiber is not None:
         fiber = entry.manual_fiber
 
+    # Merge manual micros as fallback for missing USDA data
+    if entry.manual_micros:
+        for mk, mv in entry.manual_micros.items():
+            if mk not in micros:
+                micros[mk] = mv
+
     return Food(
         name=entry.name,
         unit_note=entry.unit_note,
