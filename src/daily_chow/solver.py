@@ -49,6 +49,8 @@ class SolvedIngredient:
     grams: int
     calories: float
     protein: float
+    fat: float
+    carbs: float
     fiber: float
 
 
@@ -58,6 +60,8 @@ class Solution:
     ingredients: list[SolvedIngredient]
     meal_calories: float
     meal_protein: float
+    meal_fat: float
+    meal_carbs: float
     meal_fiber: float
     objective_value: float | None
 
@@ -92,6 +96,8 @@ def solve(
             ingredients=[],
             meal_calories=0,
             meal_protein=0,
+            meal_fat=0,
+            meal_carbs=0,
             meal_fiber=0,
             objective_value=None,
         )
@@ -132,6 +138,12 @@ def solve(
     model.add(total_fib >= fib_min_scaled)
 
     # ── Objective ─────────────────────────────────────────────────────
+    # All objectives include a small tiebreaker (total grams) to stabilize
+    # solutions — without it, equally-optimal solutions can jump wildly
+    # when constraints change by 1g.
+    TIEBREAKER_WEIGHT = 1
+    total_grams = sum(gram_vars[k] for k in gram_vars)
+
     if objective == Objective.MINIMIZE_OIL:
         oil_keys = [
             ing.key
@@ -139,12 +151,15 @@ def solve(
             if ing.food.category == "oils_fats"
         ]
         if oil_keys:
-            model.minimize(sum(gram_vars[k] for k in oil_keys))
+            primary = sum(gram_vars[k] for k in oil_keys)
+            # Weight primary so 1g oil > any total gram difference
+            max_total = sum(ing.max_g for ing in ingredients)
+            model.minimize(primary * (max_total + 1) + total_grams * TIEBREAKER_WEIGHT)
         else:
-            # No oil in model — minimize total calories deviation instead
             abs_cal_dev = model.new_int_var(0, cal_tol_scaled, "abs_cal_dev")
             model.add_abs_equality(abs_cal_dev, cal_dev)
-            model.minimize(abs_cal_dev)
+            max_total = sum(ing.max_g for ing in ingredients)
+            model.minimize(abs_cal_dev * (max_total + 1) + total_grams * TIEBREAKER_WEIGHT)
 
     elif objective == Objective.MINIMIZE_RICE_DEVIATION:
         grain_keys = [
@@ -153,7 +168,6 @@ def solve(
             if ing.food.category == "grains"
         ]
         if grain_keys:
-            # Minimize sum of absolute deviations from preferred amount
             abs_devs = []
             for k in grain_keys:
                 max_bound = next(i.max_g for i in ingredients if i.key == k)
@@ -166,14 +180,17 @@ def solve(
                 model.add(diff == gram_vars[k] - preferred_rice_g)
                 model.add_abs_equality(dev, diff)
                 abs_devs.append(dev)
-            model.minimize(sum(abs_devs))
+            primary = sum(abs_devs)
+            max_total = sum(ing.max_g for ing in ingredients)
+            model.minimize(primary * (max_total + 1) + total_grams * TIEBREAKER_WEIGHT)
         else:
             abs_cal_dev = model.new_int_var(0, cal_tol_scaled, "abs_cal_dev")
             model.add_abs_equality(abs_cal_dev, cal_dev)
-            model.minimize(abs_cal_dev)
+            max_total = sum(ing.max_g for ing in ingredients)
+            model.minimize(abs_cal_dev * (max_total + 1) + total_grams * TIEBREAKER_WEIGHT)
 
     elif objective == Objective.MINIMIZE_TOTAL_GRAMS:
-        model.minimize(sum(gram_vars[k] for k in gram_vars))
+        model.minimize(total_grams)
 
     # ── Solve ─────────────────────────────────────────────────────────
     solver = cp_model.CpSolver()
@@ -187,6 +204,8 @@ def solve(
             ingredients=[],
             meal_calories=0,
             meal_protein=0,
+            meal_fat=0,
+            meal_carbs=0,
             meal_fiber=0,
             objective_value=None,
         )
@@ -195,21 +214,29 @@ def solve(
     solved: list[SolvedIngredient] = []
     total_cal_real = 0.0
     total_pro_real = 0.0
+    total_fat_real = 0.0
+    total_carb_real = 0.0
     total_fib_real = 0.0
 
     for ing in ingredients:
         grams = solver.value(gram_vars[ing.key])
         cal = grams * ing.food.cal_per_100g / 100
         pro = grams * ing.food.protein_per_100g / 100
+        fat = grams * ing.food.fat_per_100g / 100
+        carb = grams * ing.food.carbs_per_100g / 100
         fib = grams * ing.food.fiber_per_100g / 100
         total_cal_real += cal
         total_pro_real += pro
+        total_fat_real += fat
+        total_carb_real += carb
         total_fib_real += fib
         solved.append(SolvedIngredient(
             key=ing.key,
             grams=grams,
             calories=round(cal, 1),
             protein=round(pro, 1),
+            fat=round(fat, 1),
+            carbs=round(carb, 1),
             fiber=round(fib, 1),
         ))
 
@@ -220,6 +247,8 @@ def solve(
         ingredients=solved,
         meal_calories=round(total_cal_real, 1),
         meal_protein=round(total_pro_real, 1),
+        meal_fat=round(total_fat_real, 1),
+        meal_carbs=round(total_carb_real, 1),
         meal_fiber=round(total_fib_real, 1),
         objective_value=solver.objective_value if solver.objective_value is not None else None,
     )

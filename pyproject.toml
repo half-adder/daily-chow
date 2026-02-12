@@ -1,18 +1,13 @@
 [project]
 name = "daily-chow"
-version = "0.1.0"
-description = "Interactive meal macro solver TUI powered by CP-SAT"
+version = "0.2.0"
+description = "Interactive meal macro solver — Svelte frontend + FastAPI + CP-SAT"
 requires-python = ">=3.13"
 dependencies = [
     "ortools>=9.15.6755",
-    "textual>=3.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
 ]
-
-[project.optional-dependencies]
-dev = ["pytest>=8.0", "textual-dev>=1.0"]
-
-[project.scripts]
-daily-chow = "daily_chow.app:main"
 
 [build-system]
 requires = ["hatchling"]
