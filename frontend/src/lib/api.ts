@@ -67,12 +67,13 @@ export async function solve(
 	objective: string,
 	sex: string,
 	age_group: string,
-	optimize_nutrients: string[]
+	optimize_nutrients: string[],
+	micro_strategy: string
 ): Promise<SolveResponse> {
 	const res = await fetch('/api/solve', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ingredients, targets, objective, sex, age_group, optimize_nutrients })
+		body: JSON.stringify({ ingredients, targets, objective, sex, age_group, optimize_nutrients, micro_strategy })
 	});
 	return res.json();
 }

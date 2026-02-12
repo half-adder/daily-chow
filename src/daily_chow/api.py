@@ -15,7 +15,7 @@ from daily_chow.dri import (
     remaining_targets,
 )
 from daily_chow.food_db import load_foods
-from daily_chow.solver import IngredientInput, Objective, Targets, solve
+from daily_chow.solver import IngredientInput, MicroStrategy, Objective, Targets, solve
 
 app = FastAPI(title="Daily Chow API")
 
@@ -48,6 +48,7 @@ class SolveRequest(BaseModel):
     ingredients: list[IngredientRequest]
     targets: TargetsRequest = TargetsRequest()
     objective: str = "minimize_oil"
+    micro_strategy: str = "blended"
     sex: str = "male"
     age_group: str = "19-30"
     optimize_nutrients: list[str] = []
@@ -155,7 +156,8 @@ def post_solve(req: SolveRequest) -> SolveResponse:
         }
 
     objective = Objective(req.objective)
-    solution = solve(ingredient_inputs, targets, objective, micro_targets=micro_targets)
+    strategy = MicroStrategy(req.micro_strategy)
+    solution = solve(ingredient_inputs, targets, objective, micro_targets=micro_targets, micro_strategy=strategy)
 
     # Build micro results for all 20 tracked nutrients
     dri = DRI_TARGETS[(sex, age_group)]

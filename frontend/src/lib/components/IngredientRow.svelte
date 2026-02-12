@@ -207,7 +207,7 @@
 
 <style>
 	.ingredient-wrapper {
-		border-bottom: 1px solid #1e1e1e;
+		border-bottom: 1px solid var(--border-row);
 	}
 
 	.ingredient-row {
@@ -221,7 +221,7 @@
 	}
 
 	.ingredient-row:hover {
-		background: #1a1a2e;
+		background: var(--bg-hover);
 	}
 
 	.ingredient-row.disabled {
@@ -229,7 +229,7 @@
 	}
 
 	.ingredient-row.expanded {
-		background: #1a1a2e;
+		background: var(--bg-hover);
 	}
 
 	.checkbox-cell {
@@ -265,7 +265,7 @@
 
 	.name {
 		font-weight: 500;
-		color: #e2e8f0;
+		color: var(--text-primary);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -273,7 +273,7 @@
 
 	.unit-note {
 		font-size: 11px;
-		color: #64748b;
+		color: var(--text-muted);
 		padding-left: 16px;
 	}
 
@@ -281,10 +281,10 @@
 		box-sizing: border-box;
 		width: 100%;
 		padding: 4px 6px;
-		background: #1e1e1e;
-		border: 1px solid #333;
+		background: var(--bg-input);
+		border: 1px solid var(--border-input);
 		border-radius: 4px;
-		color: #94a3b8;
+		color: var(--text-secondary);
 		font-size: 13px;
 		font-variant-numeric: tabular-nums;
 		text-align: right;
@@ -326,7 +326,7 @@
 	}
 
 	.solved-none {
-		color: #475569;
+		color: var(--text-dim);
 	}
 
 	.macros-cell {
@@ -334,7 +334,7 @@
 		grid-template-columns: 1fr auto 1fr;
 		font-size: 13px;
 		font-variant-numeric: tabular-nums;
-		color: #64748b;
+		color: var(--text-muted);
 	}
 
 	.macro-cal {
@@ -343,7 +343,7 @@
 	}
 
 	.macro-sep {
-		color: #334155;
+		color: var(--border-input);
 		text-align: center;
 		padding: 0 4px;
 	}
@@ -356,7 +356,7 @@
 	.remove-btn {
 		background: none;
 		border: none;
-		color: #475569;
+		color: var(--text-dim);
 		font-size: 18px;
 		cursor: pointer;
 		padding: 0;
@@ -376,14 +376,14 @@
 		grid-template-columns: 1fr 1fr;
 		gap: 20px;
 		padding: 12px 20px 16px 52px;
-		background: #111827;
-		border-top: 1px solid #1e293b;
+		background: var(--bg-detail);
+		border-top: 1px solid var(--border);
 	}
 
 	.detail-panel h4 {
 		margin: 0 0 8px;
 		font-size: 11px;
-		color: #64748b;
+		color: var(--text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -397,7 +397,7 @@
 
 	.detail-bar-label {
 		font-size: 12px;
-		color: #94a3b8;
+		color: var(--text-secondary);
 		width: 60px;
 		flex-shrink: 0;
 	}
@@ -405,7 +405,7 @@
 	.detail-bar-track {
 		flex: 1;
 		height: 6px;
-		background: #1e293b;
+		background: var(--bg-track);
 		border-radius: 3px;
 		overflow: hidden;
 	}
@@ -420,7 +420,7 @@
 	.detail-bar-pct {
 		font-size: 12px;
 		font-weight: 600;
-		color: #94a3b8;
+		color: var(--text-secondary);
 		width: 32px;
 		text-align: right;
 		font-variant-numeric: tabular-nums;

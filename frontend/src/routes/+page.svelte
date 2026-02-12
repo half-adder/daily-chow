@@ -60,6 +60,8 @@
 	let calTol = $state(50);
 	let proTol = $state(5);
 	let objective = $state('minimize_oil');
+	let microStrategy = $state('blended');
+	let theme = $state<'dark' | 'light'>('dark');
 
 	// Slider scale
 	let sliderAbsMax = $state(500);
@@ -148,6 +150,19 @@
 		return { carb, pro, fat };
 	});
 
+	// ── Theme ───────────────────────────────────────────────────────
+
+	function applyTheme(t: 'dark' | 'light') {
+		if (t === 'light') document.documentElement.dataset.theme = 'light';
+		else delete document.documentElement.dataset.theme;
+	}
+
+	function toggleTheme() {
+		theme = theme === 'dark' ? 'light' : 'dark';
+		applyTheme(theme);
+		saveState();
+	}
+
 	// ── Micro checkbox helpers ───────────────────────────────────────
 
 	function toggleNutrient(key: string) {
@@ -212,7 +227,8 @@
 				objective,
 				sex,
 				ageGroup,
-				Array.from(optimizeNutrients)
+				Array.from(optimizeNutrients),
+				microStrategy
 			);
 		} catch {
 			solution = null;
@@ -231,7 +247,7 @@
 		const state = {
 			dailyCal, dailyPro, dailyFiberMin,
 			smoothieCal, smoothiePro, smoothieFiber,
-			calTol, proTol, objective, ingredients,
+			calTol, proTol, objective, microStrategy, theme, ingredients,
 			sex, ageGroup,
 			optimizeNutrients: Array.from(optimizeNutrients),
 			microsOpen, sliderAbsMax
@@ -261,6 +277,8 @@
 			objective = s.objective ?? 'minimize_oil';
 			// Drop removed objective
 			if (objective === 'minimize_rice_deviation') objective = 'minimize_oil';
+			microStrategy = s.microStrategy ?? 'blended';
+			if (s.theme === 'light' || s.theme === 'dark') theme = s.theme;
 			if (s.ingredients) {
 				ingredients = s.ingredients;
 				// Backfill colors for ingredients saved before color support
@@ -360,13 +378,28 @@
 	onMount(async () => {
 		foods = await fetchFoods();
 		loadState();
+		applyTheme(theme);
 		doSolve();
 	});
 </script>
 
 <div class="app">
 	<header>
-		<h1>Daily Chow</h1>
+		<div class="header-row">
+			<h1>Daily Chow</h1>
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+			<div class="theme-switch" onclick={toggleTheme} title="Toggle light/dark mode">
+				<svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+					<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+				</svg>
+				<div class="switch-track" class:light={theme === 'light'}>
+					<div class="switch-thumb"></div>
+				</div>
+				<svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+				</svg>
+			</div>
+		</div>
 		<p class="subtitle">Meal macro solver</p>
 	</header>
 
@@ -411,6 +444,15 @@
 					<select bind:value={objective} onchange={triggerSolve}>
 						<option value="minimize_oil">Minimize oil</option>
 						<option value="minimize_total_grams">Minimize total grams</option>
+					</select>
+				</div>
+			</div>
+			<div class="target-group">
+				<label>Micro strategy</label>
+				<div class="target-input-row">
+					<select bind:value={microStrategy} onchange={triggerSolve}>
+						<option value="blended">Blended</option>
+						<option value="lexicographic">Lexicographic</option>
 					</select>
 				</div>
 			</div>
@@ -644,8 +686,8 @@
 <style>
 	:global(body) {
 		margin: 0;
-		background: #0a0a0a;
-		color: #e2e8f0;
+		background: var(--bg-body);
+		color: var(--text-primary);
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 	}
 
@@ -659,6 +701,12 @@
 		margin-bottom: 24px;
 	}
 
+	.header-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
 	h1 {
 		margin: 0;
 		font-size: 28px;
@@ -666,17 +714,55 @@
 		letter-spacing: -0.02em;
 	}
 
+	.theme-switch {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--text-muted);
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.switch-track {
+		position: relative;
+		width: 36px;
+		height: 20px;
+		background: var(--border-input);
+		border-radius: 10px;
+		transition: background 0.2s;
+	}
+
+	.switch-track.light {
+		background: #3b82f6;
+	}
+
+	.switch-thumb {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 16px;
+		height: 16px;
+		background: #fff;
+		border-radius: 50%;
+		transition: transform 0.2s;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+	}
+
+	.switch-track.light .switch-thumb {
+		transform: translateX(16px);
+	}
+
 	.subtitle {
 		margin: 4px 0 0;
-		color: #64748b;
+		color: var(--text-muted);
 		font-size: 14px;
 	}
 
 	/* ── Targets ──────────────────────────────────────── */
 
 	.targets-section {
-		background: #0f172a;
-		border: 1px solid #1e293b;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		padding: 16px 20px;
 		margin-bottom: 16px;
@@ -697,7 +783,7 @@
 
 	.target-group label {
 		font-size: 11px;
-		color: #64748b;
+		color: var(--text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -711,10 +797,10 @@
 	.target-group input[type='number'],
 	.target-group select {
 		padding: 6px 10px;
-		background: #1e1e2e;
-		border: 1px solid #334155;
+		background: var(--bg-input);
+		border: 1px solid var(--border-input);
 		border-radius: 6px;
-		color: #e2e8f0;
+		color: var(--text-primary);
 		font-size: 14px;
 		width: 80px;
 		font-variant-numeric: tabular-nums;
@@ -733,13 +819,13 @@
 
 	.unit {
 		font-size: 12px;
-		color: #64748b;
+		color: var(--text-muted);
 	}
 
 	.smoothie-row {
 		margin-top: 12px;
 		font-size: 13px;
-		color: #64748b;
+		color: var(--text-muted);
 		display: flex;
 		align-items: center;
 		gap: 6px;
@@ -748,10 +834,10 @@
 	.sm-input {
 		width: 48px;
 		padding: 3px 6px;
-		background: #1e1e2e;
-		border: 1px solid #334155;
+		background: var(--bg-input);
+		border: 1px solid var(--border-input);
 		border-radius: 4px;
-		color: #94a3b8;
+		color: var(--text-secondary);
 		font-size: 12px;
 		text-align: center;
 	}
@@ -773,8 +859,8 @@
 	/* ── Ingredients ──────────────────────────────────── */
 
 	.ingredients-section {
-		background: #0f172a;
-		border: 1px solid #1e293b;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		overflow: hidden;
 		margin-bottom: 16px;
@@ -786,10 +872,10 @@
 		gap: 8px;
 		padding: 10px 12px;
 		font-size: 11px;
-		color: #475569;
+		color: var(--text-dim);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		border-bottom: 1px solid #1e293b;
+		border-bottom: 1px solid var(--border);
 	}
 
 	.ingredients-header .text-right {
@@ -823,7 +909,7 @@
 		padding: 12px;
 		background: none;
 		border: none;
-		border-top: 1px solid #1e293b;
+		border-top: 1px solid var(--border);
 		color: #3b82f6;
 		font-size: 14px;
 		cursor: pointer;
@@ -831,14 +917,14 @@
 	}
 
 	.add-btn:hover {
-		background: #1e293b;
+		background: var(--bg-hover);
 	}
 
 	/* ── Totals ───────────────────────────────────────── */
 
 	.totals-section {
-		background: #0f172a;
-		border: 1px solid #1e293b;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		padding: 16px 20px;
 	}
@@ -857,7 +943,7 @@
 
 	.total-label {
 		font-size: 12px;
-		color: #64748b;
+		color: var(--text-muted);
 		text-transform: uppercase;
 		width: 40px;
 	}
@@ -895,7 +981,7 @@
 	}
 
 	.solving {
-		color: #64748b;
+		color: var(--text-muted);
 		font-size: 14px;
 	}
 
@@ -940,8 +1026,8 @@
 	/* ── Micronutrients ──────────────────────────────── */
 
 	.micros-section {
-		background: #0f172a;
-		border: 1px solid #1e293b;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		margin-top: 16px;
 		overflow: hidden;
@@ -952,7 +1038,7 @@
 		padding: 14px 20px;
 		background: none;
 		border: none;
-		color: #e2e8f0;
+		color: var(--text-primary);
 		font-size: 15px;
 		font-weight: 600;
 		cursor: pointer;
@@ -964,14 +1050,14 @@
 	}
 
 	.micros-toggle:hover {
-		background: #1e293b44;
+		background: var(--bg-hover);
 	}
 
 	.micros-arrow {
 		display: inline-block;
 		transition: transform 0.15s;
 		font-size: 14px;
-		color: #64748b;
+		color: var(--text-muted);
 	}
 
 	.micros-arrow.open {
@@ -982,7 +1068,7 @@
 		font-size: 11px;
 		font-weight: 500;
 		color: #3b82f6;
-		background: #1e3a5f;
+		background: var(--bg-badge);
 		padding: 2px 8px;
 		border-radius: 10px;
 		margin-left: auto;
@@ -1019,7 +1105,7 @@
 	.micro-group-name {
 		font-size: 12px;
 		font-weight: 600;
-		color: #94a3b8;
+		color: var(--text-secondary);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -1058,12 +1144,12 @@
 
 	.micro-name {
 		font-size: 13px;
-		color: #cbd5e1;
+		color: var(--text-micro);
 	}
 
 	.micro-bar-track {
 		height: 8px;
-		background: #1e293b;
+		background: var(--bg-track);
 		border-radius: 4px;
 		overflow: hidden;
 	}
@@ -1084,7 +1170,7 @@
 
 	.micro-amounts {
 		font-size: 12px;
-		color: #64748b;
+		color: var(--text-muted);
 		font-variant-numeric: tabular-nums;
 		text-align: right;
 	}
@@ -1110,7 +1196,7 @@
 
 	.breakdown-label {
 		font-size: 11px;
-		color: #64748b;
+		color: var(--text-muted);
 		text-transform: uppercase;
 		width: 60px;
 		flex-shrink: 0;

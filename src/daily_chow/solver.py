@@ -33,6 +33,11 @@ class Objective(Enum):
     MINIMIZE_TOTAL_GRAMS = "minimize_total_grams"
 
 
+class MicroStrategy(Enum):
+    BLENDED = "blended"  # micro shortfall + total grams at same priority level
+    LEXICOGRAPHIC = "lexicographic"  # micro >> total grams as separate levels
+
+
 @dataclass(frozen=True, slots=True)
 class Targets:
     meal_calories: int = 2780  # kcal (daily 3500 minus smoothie 720)
@@ -89,6 +94,7 @@ def solve(
     targets: Targets = Targets(),
     objective: Objective = Objective.MINIMIZE_OIL,
     micro_targets: dict[str, float] | None = None,
+    micro_strategy: MicroStrategy = MicroStrategy.BLENDED,
     solver_timeout_s: float = 5.0,
 ) -> Solution:
     """Build and solve the CP-SAT model.
@@ -222,18 +228,22 @@ def solve(
         primary_expr = total_grams
         max_primary = max_total
 
-    # Build lexicographic objective: primary >> secondary
-    # When micro optimization is active, blend micro shortfall with total
-    # grams so the solver balances nutrient coverage against meal size.
-    # Filling one full nutrient gap is worth ~200g of extra food.
-    GRAMS_PER_GAP = 200
+    # Build lexicographic objective: primary >> secondary [>> tertiary]
     terms: list[tuple[cp_model.LinearExprT, int]] = [(primary_expr, max_primary)]
 
     if max_micro_penalty > 0:
-        grams_cost = max(1, MICRO_NORM // GRAMS_PER_GAP)
-        blended = micro_penalty + total_grams * grams_cost
-        max_blended = max_micro_penalty + max_total * grams_cost
-        terms.append((blended, max_blended))
+        if micro_strategy == MicroStrategy.BLENDED:
+            # Blend micro shortfall with total grams at the same priority level.
+            # Filling one full nutrient gap is worth ~GRAMS_PER_GAP of extra food.
+            GRAMS_PER_GAP = 200
+            grams_cost = max(1, MICRO_NORM // GRAMS_PER_GAP)
+            blended = micro_penalty + total_grams * grams_cost
+            max_blended = max_micro_penalty + max_total * grams_cost
+            terms.append((blended, max_blended))
+        else:  # LEXICOGRAPHIC: micro >> total grams as separate levels
+            terms.append((micro_penalty, max_micro_penalty))
+            if objective != Objective.MINIMIZE_TOTAL_GRAMS:
+                terms.append((total_grams, max_total))
     elif objective != Objective.MINIMIZE_TOTAL_GRAMS:
         terms.append((total_grams, max_total))
 

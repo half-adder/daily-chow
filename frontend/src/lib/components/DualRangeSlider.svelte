@@ -89,7 +89,7 @@
 		position: relative;
 		width: 100%;
 		height: 6px;
-		background: #2a2a2a;
+		background: var(--bg-track);
 		border-radius: 3px;
 	}
 

@@ -87,8 +87,8 @@
 	.segment-label {
 		font-size: 11px;
 		font-weight: 600;
-		color: #fff;
-		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+		color: var(--text-segment);
+		text-shadow: 0 1px 2px var(--shadow-text);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -99,19 +99,19 @@
 		position: fixed;
 		transform: translate(-50%, -100%);
 		margin-top: -10px;
-		background: #1e293b;
-		border: 1px solid #334155;
+		background: var(--bg-panel);
+		border: 1px solid var(--border-input);
 		border-radius: 6px;
 		padding: 6px 10px;
 		display: flex;
 		align-items: center;
 		gap: 6px;
 		font-size: 12px;
-		color: #e2e8f0;
+		color: var(--text-primary);
 		pointer-events: none;
 		z-index: 200;
 		white-space: nowrap;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+		box-shadow: 0 4px 12px var(--shadow-tooltip);
 	}
 
 	.tooltip-swatch {
@@ -126,6 +126,6 @@
 	}
 
 	.tooltip-value {
-		color: #94a3b8;
+		color: var(--text-secondary);
 	}
 </style>
