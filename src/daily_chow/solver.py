@@ -30,7 +30,6 @@ MICRO_NORM = 100_000_000
 
 class Objective(Enum):
     MINIMIZE_OIL = "minimize_oil"
-    MINIMIZE_RICE_DEVIATION = "minimize_rice_deviation"
     MINIMIZE_TOTAL_GRAMS = "minimize_total_grams"
 
 
@@ -45,7 +44,7 @@ class Targets:
 
 @dataclass(frozen=True, slots=True)
 class IngredientInput:
-    key: str
+    key: int  # FDC ID
     food: Food
     min_g: int
     max_g: int
@@ -53,7 +52,7 @@ class IngredientInput:
 
 @dataclass(frozen=True, slots=True)
 class SolvedIngredient:
-    key: str
+    key: int  # FDC ID
     grams: int
     calories: float
     protein: float
@@ -89,7 +88,6 @@ def solve(
     ingredients: list[IngredientInput],
     targets: Targets = Targets(),
     objective: Objective = Objective.MINIMIZE_OIL,
-    preferred_rice_g: int = 200,
     micro_targets: dict[str, float] | None = None,
     solver_timeout_s: float = 5.0,
 ) -> Solution:
@@ -99,7 +97,6 @@ def solve(
         ingredients: Enabled ingredients with their bounds.
         targets: Calorie/protein/fiber targets and tolerances.
         objective: Which objective function to use.
-        preferred_rice_g: For MINIMIZE_RICE_DEVIATION, the preferred amount.
         micro_targets: Nutrient key -> remaining DRI target (after smoothie).
             Only checked nutrients are included. None or empty disables micro opt.
         solver_timeout_s: Maximum solver time in seconds.
@@ -122,9 +119,9 @@ def solve(
     model = cp_model.CpModel()
 
     # ── Decision variables ────────────────────────────────────────────
-    gram_vars: dict[str, cp_model.IntVar] = {}
+    gram_vars: dict[int, cp_model.IntVar] = {}
     for ing in ingredients:
-        gram_vars[ing.key] = model.new_int_var(ing.min_g, ing.max_g, ing.key)
+        gram_vars[ing.key] = model.new_int_var(ing.min_g, ing.max_g, str(ing.key))
 
     # ── Precompute scaled coefficients ────────────────────────────────
     cal_coeffs = {ing.key: _scaled_coeff(ing.food.cal_per_100g) for ing in ingredients}
@@ -206,7 +203,7 @@ def solve(
     # Compute primary expression based on objective type
     if objective == Objective.MINIMIZE_OIL:
         oil_keys = [
-            ing.key for ing in ingredients if ing.food.category == "oils_fats"
+            ing.key for ing in ingredients if ing.food.category == "Fats and Oils"
         ]
         if oil_keys:
             primary_expr: cp_model.LinearExprT = sum(
@@ -215,32 +212,6 @@ def solve(
             max_primary = sum(
                 ing.max_g for ing in ingredients if ing.key in set(oil_keys)
             )
-        else:
-            abs_cal_dev = model.new_int_var(0, cal_tol_scaled, "abs_cal_dev")
-            model.add_abs_equality(abs_cal_dev, cal_dev)
-            primary_expr = abs_cal_dev
-            max_primary = cal_tol_scaled
-
-    elif objective == Objective.MINIMIZE_RICE_DEVIATION:
-        grain_keys = [
-            ing.key for ing in ingredients if ing.food.category == "grains"
-        ]
-        if grain_keys:
-            abs_devs: list[cp_model.IntVar] = []
-            max_dev_sum = 0
-            for k in grain_keys:
-                max_bound = next(i.max_g for i in ingredients if i.key == k)
-                upper = max(max_bound, preferred_rice_g)
-                dev = model.new_int_var(0, upper, f"{k}_dev")
-                diff = model.new_int_var(-upper, upper, f"{k}_diff")
-                model.add(diff == gram_vars[k] - preferred_rice_g)
-                model.add_abs_equality(dev, diff)
-                abs_devs.append(dev)
-                max_dev_sum += upper
-            primary_expr = abs_devs[0]
-            for d in abs_devs[1:]:
-                primary_expr = primary_expr + d
-            max_primary = max_dev_sum
         else:
             abs_cal_dev = model.new_int_var(0, cal_tol_scaled, "abs_cal_dev")
             model.add_abs_equality(abs_cal_dev, cal_dev)

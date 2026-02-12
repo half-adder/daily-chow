@@ -3,10 +3,10 @@
 	import { computeGapScore, countGapsFilled } from '$lib/contributions';
 
 	interface Props {
-		foods: Record<string, Food>;
-		existingKeys: Set<string>;
+		foods: Record<number, Food>;
+		existingKeys: Set<number>;
 		microResults: Record<string, MicroResult>;
-		onselect: (key: string) => void;
+		onselect: (key: number) => void;
 		onclose: () => void;
 	}
 
@@ -18,27 +18,26 @@
 
 	let results = $derived.by(() => {
 		const q = query.toLowerCase().trim();
-		let entries = Object.entries(foods).filter(([k]) => !existingKeys.has(k));
+		let entries = Object.entries(foods).filter(([k]) => !existingKeys.has(Number(k)));
 
 		if (q) {
 			entries = entries
-				.filter(([key, food]) => {
-					const searchable = `${food.name} ${food.unit_note} ${food.category} ${key}`.toLowerCase();
+				.filter(([, food]) => {
+					const searchable = `${food.name} ${food.subtitle} ${food.usda_description} ${food.category}`.toLowerCase();
 					return searchable.includes(q);
 				})
 				.sort(([, a], [, b]) => {
 					const aStarts = a.name.toLowerCase().startsWith(q) ? 0 : 1;
 					const bStarts = b.name.toLowerCase().startsWith(q) ? 0 : 1;
 					if (aStarts !== bStarts) return aStarts - bStarts;
-					// Tiebreak by gap score
 					if (hasMicroData) {
-						return computeGapScore('', b, microResults) - computeGapScore('', a, microResults);
+						return computeGapScore(0, b, microResults) - computeGapScore(0, a, microResults);
 					}
 					return 0;
 				});
 		} else if (hasMicroData) {
 			entries = entries.sort(([, a], [, b]) => {
-				return computeGapScore('', b, microResults) - computeGapScore('', a, microResults);
+				return computeGapScore(0, b, microResults) - computeGapScore(0, a, microResults);
 			});
 		}
 
@@ -72,9 +71,9 @@
 		<div class="results">
 			{#each results as [key, food]}
 				{@const gaps = hasMicroData ? countGapsFilled(food, microResults) : 0}
-				<button class="result-item" onclick={() => onselect(key)}>
+				<button class="result-item" onclick={() => onselect(Number(key))}>
 					<span class="result-name">{food.name}</span>
-					<span class="result-note">{food.unit_note}</span>
+					<span class="result-note">{food.subtitle}</span>
 					<span class="result-macros">
 						{food.cal_per_100g} kcal · {food.protein_per_100g}g pro · {food.fiber_per_100g}g fiber
 					</span>

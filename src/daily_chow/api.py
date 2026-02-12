@@ -14,8 +14,8 @@ from daily_chow.dri import (
     Sex,
     remaining_targets,
 )
+from daily_chow.food_db import load_foods
 from daily_chow.solver import IngredientInput, Objective, Targets, solve
-from daily_chow.usda import load_foods
 
 app = FastAPI(title="Daily Chow API")
 
@@ -31,7 +31,7 @@ app.add_middleware(
 
 
 class IngredientRequest(BaseModel):
-    key: str
+    key: int  # FDC ID
     min_g: int
     max_g: int
 
@@ -54,7 +54,7 @@ class SolveRequest(BaseModel):
 
 
 class SolvedIngredientResponse(BaseModel):
-    key: str
+    key: int  # FDC ID
     grams: int
     calories: float
     protein: float
@@ -84,16 +84,16 @@ class SolveResponse(BaseModel):
 
 
 class FoodResponse(BaseModel):
+    fdc_id: int
     name: str
-    unit_note: str
+    subtitle: str
+    usda_description: str
     cal_per_100g: float
     protein_per_100g: float
     fat_per_100g: float
     carbs_per_100g: float
     fiber_per_100g: float
     category: str
-    default_min: int
-    default_max: int
     micros: dict[str, float] = {}
 
 
@@ -101,23 +101,23 @@ class FoodResponse(BaseModel):
 
 
 @app.get("/foods")
-def get_foods() -> dict[str, FoodResponse]:
+def get_foods() -> dict[int, FoodResponse]:
     foods = load_foods()
     return {
-        key: FoodResponse(
+        fdc_id: FoodResponse(
+            fdc_id=f.fdc_id,
             name=f.name,
-            unit_note=f.unit_note,
+            subtitle=f.subtitle,
+            usda_description=f.usda_description,
             cal_per_100g=f.cal_per_100g,
             protein_per_100g=f.protein_per_100g,
             fat_per_100g=f.fat_per_100g,
             carbs_per_100g=f.carbs_per_100g,
             fiber_per_100g=f.fiber_per_100g,
             category=f.category,
-            default_min=f.default_min,
-            default_max=f.default_max,
             micros=f.micros,
         )
-        for key, f in foods.items()
+        for fdc_id, f in foods.items()
     }
 
 

@@ -4,7 +4,7 @@
 	import type { IngredientContribution } from '$lib/contributions';
 
 	interface Props {
-		ingredientKey: string;
+		ingredientKey: number;
 		food: Food;
 		color: string;
 		enabled: boolean;
@@ -116,7 +116,7 @@
 				<span class="color-swatch" style="background: {color}"></span>
 				<span class="name">{food.name}</span>
 			</div>
-			<span class="unit-note">{food.unit_note}</span>
+			{#if food.subtitle}<span class="unit-note">{food.subtitle}</span>{/if}
 		</div>
 
 		<input

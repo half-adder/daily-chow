@@ -48,9 +48,9 @@ export interface IngredientContribution {
 
 export function computeContributions(
 	solution: SolveResponse,
-	foods: Record<string, Food>
-): Map<string, IngredientContribution> {
-	const result = new Map<string, IngredientContribution>();
+	foods: Record<number, Food>
+): Map<number, IngredientContribution> {
+	const result = new Map<number, IngredientContribution>();
 	if (solution.status === 'infeasible') return result;
 
 	const totalCal = solution.meal_calories || 1;
@@ -85,7 +85,7 @@ export function computeContributions(
 
 // Fill in driPct values using the micro results from the solve response
 export function enrichWithDri(
-	contributions: Map<string, IngredientContribution>,
+	contributions: Map<number, IngredientContribution>,
 	microResults: Record<string, MicroResult>
 ): void {
 	for (const [, contrib] of contributions) {
@@ -98,14 +98,15 @@ export function enrichWithDri(
 	}
 }
 
+// Estimate gap score using a fixed 250g serving assumption
+const ESTIMATED_SERVING_G = 250;
+
 export function computeGapScore(
-	foodKey: string,
+	foodKey: number | string,
 	food: Food,
 	microResults: Record<string, MicroResult>
 ): number {
-	const estimatedG = (food.default_min + food.default_max) / 2;
 	let score = 0;
-	let gapCount = 0;
 
 	for (const [key, mr] of Object.entries(microResults)) {
 		if (mr.pct >= 100) continue; // no gap
@@ -115,10 +116,9 @@ export function computeGapScore(
 		const per100g = food.micros[key];
 		if (!per100g) continue;
 
-		const wouldAdd = (per100g * estimatedG) / 100;
+		const wouldAdd = (per100g * ESTIMATED_SERVING_G) / 100;
 		const fillPct = Math.min(wouldAdd / gap, 1.0);
 		score += fillPct;
-		if (fillPct > 0.1) gapCount++;
 	}
 
 	return score;
@@ -128,7 +128,6 @@ export function countGapsFilled(
 	food: Food,
 	microResults: Record<string, MicroResult>
 ): number {
-	const estimatedG = (food.default_min + food.default_max) / 2;
 	let count = 0;
 
 	for (const [key, mr] of Object.entries(microResults)) {
@@ -139,7 +138,7 @@ export function countGapsFilled(
 		const per100g = food.micros[key];
 		if (!per100g) continue;
 
-		const wouldAdd = (per100g * estimatedG) / 100;
+		const wouldAdd = (per100g * ESTIMATED_SERVING_G) / 100;
 		if (wouldAdd / gap > 0.1) count++;
 	}
 

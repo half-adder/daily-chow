@@ -1,19 +1,19 @@
 export interface Food {
+	fdc_id: number;
 	name: string;
-	unit_note: string;
+	subtitle: string;
+	usda_description: string;
 	cal_per_100g: number;
 	protein_per_100g: number;
 	fat_per_100g: number;
 	carbs_per_100g: number;
 	fiber_per_100g: number;
 	category: string;
-	default_min: number;
-	default_max: number;
 	micros: Record<string, number>;
 }
 
 export interface SolveIngredient {
-	key: string;
+	key: number; // FDC ID
 	min_g: number;
 	max_g: number;
 }
@@ -27,7 +27,7 @@ export interface SolveTargets {
 }
 
 export interface SolvedIngredient {
-	key: string;
+	key: number; // FDC ID
 	grams: number;
 	calories: number;
 	protein: number;
@@ -56,7 +56,7 @@ export interface SolveResponse {
 	micros: Record<string, MicroResult>;
 }
 
-export async function fetchFoods(): Promise<Record<string, Food>> {
+export async function fetchFoods(): Promise<Record<number, Food>> {
 	const res = await fetch('/api/foods');
 	return res.json();
 }

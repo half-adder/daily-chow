@@ -48,7 +48,7 @@
 
 	// ── State ────────────────────────────────────────────────────────
 
-	let foods = $state<Record<string, Food>>({});
+	let foods = $state<Record<number, Food>>({});
 
 	// Targets
 	let dailyCal = $state(3500);
@@ -85,31 +85,33 @@
 
 	// Ingredients
 	interface IngredientEntry {
-		key: string;
+		key: number; // FDC ID
 		enabled: boolean;
 		minG: number;
 		maxG: number;
 		color: string;
 	}
 
-	let ingredients = $state<IngredientEntry[]>([
-		{ key: 'white_rice_dry', enabled: true, minG: 0, maxG: 400, color: INGREDIENT_COLORS[0] },
-		{ key: 'broccoli_raw', enabled: true, minG: 200, maxG: 400, color: INGREDIENT_COLORS[1] },
-		{ key: 'carrots_raw', enabled: true, minG: 150, maxG: 300, color: INGREDIENT_COLORS[2] },
-		{ key: 'zucchini_raw', enabled: true, minG: 250, maxG: 500, color: INGREDIENT_COLORS[3] },
-		{ key: 'avocado_oil', enabled: true, minG: 0, maxG: 100, color: INGREDIENT_COLORS[4] },
-		{ key: 'black_beans_cooked', enabled: true, minG: 150, maxG: 400, color: INGREDIENT_COLORS[5] },
-		{ key: 'yellow_split_peas_dry', enabled: true, minG: 60, maxG: 150, color: INGREDIENT_COLORS[6] },
-		{ key: 'ground_beef_80_20_raw', enabled: true, minG: 0, maxG: 1000, color: INGREDIENT_COLORS[7] },
-		{ key: 'chicken_thigh_raw', enabled: true, minG: 0, maxG: 1000, color: INGREDIENT_COLORS[8] },
-	]);
+	const DEFAULT_INGREDIENTS: IngredientEntry[] = [
+		{ key: 2512381, enabled: true, minG: 0, maxG: 400, color: INGREDIENT_COLORS[0] },  // White rice, raw
+		{ key: 747447, enabled: true, minG: 200, maxG: 400, color: INGREDIENT_COLORS[1] },  // Broccoli, raw
+		{ key: 2258586, enabled: true, minG: 150, maxG: 300, color: INGREDIENT_COLORS[2] }, // Carrots, raw
+		{ key: 2685568, enabled: true, minG: 250, maxG: 500, color: INGREDIENT_COLORS[3] }, // Zucchini, raw
+		{ key: 173573, enabled: true, minG: 0, maxG: 100, color: INGREDIENT_COLORS[4] },    // Avocado oil
+		{ key: 173735, enabled: true, minG: 150, maxG: 400, color: INGREDIENT_COLORS[5] },  // Black beans, cooked
+		{ key: 172429, enabled: true, minG: 60, maxG: 150, color: INGREDIENT_COLORS[6] },   // Split peas, cooked
+		{ key: 2514744, enabled: true, minG: 0, maxG: 500, color: INGREDIENT_COLORS[7] },   // Ground beef 80/20, raw
+		{ key: 2646171, enabled: true, minG: 0, maxG: 500, color: INGREDIENT_COLORS[8] },   // Chicken thigh, raw
+	];
+
+	let ingredients = $state<IngredientEntry[]>([...DEFAULT_INGREDIENTS]);
 
 	let solution = $state<SolveResponse | null>(null);
 	let showAddModal = $state(false);
 	let solving = $state(false);
 
 	// Expand states
-	let expandedIngredient = $state<string | null>(null);
+	let expandedIngredient = $state<number | null>(null);
 	let expandedMacro = $state(false);
 	let expandedMicro = $state<string | null>(null);
 
@@ -118,7 +120,7 @@
 	let mealPro = $derived(dailyPro - smoothiePro);
 	let mealFiberMin = $derived(dailyFiberMin - smoothieFiber);
 
-	let existingKeys = $derived(new Set(ingredients.map((i) => i.key)));
+	let existingKeys = $derived(new Set<number>(ingredients.map((i) => i.key)));
 
 	// Ingredient color map for stacked bars
 	let ingredientColorMap = $derived(
@@ -127,7 +129,7 @@
 
 	// Per-ingredient contributions (derived from solution)
 	let contributions = $derived.by(() => {
-		if (!solution || solution.status === 'infeasible') return new Map<string, IngredientContribution>();
+		if (!solution || solution.status === 'infeasible') return new Map<number, IngredientContribution>();
 		const contribs = computeContributions(solution, foods);
 		enrichWithDri(contribs, solution.micros);
 		return contribs;
@@ -219,7 +221,7 @@
 		saveState();
 	}
 
-	function getSolved(key: string): SolvedIngredient | null {
+	function getSolved(key: number): SolvedIngredient | null {
 		return solution?.ingredients.find((i) => i.key === key) ?? null;
 	}
 
@@ -242,6 +244,12 @@
 		if (!raw) return;
 		try {
 			const s = JSON.parse(raw);
+			// Detect old slug-based state (keys are strings instead of numbers)
+			if (s.ingredients?.length > 0 && typeof s.ingredients[0].key === 'string') {
+				// Discard old state, use defaults
+				localStorage.removeItem('daily-chow');
+				return;
+			}
 			dailyCal = s.dailyCal ?? 3500;
 			dailyPro = s.dailyPro ?? 160;
 			dailyFiberMin = s.dailyFiberMin ?? 40;
@@ -251,6 +259,8 @@
 			calTol = s.calTol ?? 50;
 			proTol = s.proTol ?? 5;
 			objective = s.objective ?? 'minimize_oil';
+			// Drop removed objective
+			if (objective === 'minimize_rice_deviation') objective = 'minimize_oil';
 			if (s.ingredients) {
 				ingredients = s.ingredients;
 				// Backfill colors for ingredients saved before color support
@@ -272,15 +282,15 @@
 
 	// ── Actions ──────────────────────────────────────────────────────
 
-	function addIngredient(key: string) {
+	function addIngredient(key: number) {
 		const food = foods[key];
 		if (!food) return;
 		const usedColors = ingredients.map((i) => i.color);
 		ingredients = [...ingredients, {
 			key,
 			enabled: true,
-			minG: food.default_min,
-			maxG: food.default_max,
+			minG: 0,
+			maxG: 500,
 			color: assignColor(usedColors)
 		}];
 		showAddModal = false;
@@ -314,7 +324,7 @@
 				const contrib = contributions.get(ing.key);
 				const color = ingredientColorMap.get(ing.key) ?? '#666';
 				const food = foods[ing.key];
-				const name = food?.name ?? ing.key;
+				const name = food?.name ?? String(ing.key);
 				const pct = contrib?.macroPcts[macro] ?? 0;
 				let val = 0;
 				if (macro === 'cal') val = ing.calories;
@@ -322,7 +332,7 @@
 				else if (macro === 'fat') val = ing.fat;
 				else if (macro === 'carb') val = ing.carbs;
 				else val = ing.fiber;
-				return { key: ing.key, label: name, value: `${Math.round(val)}${macro === 'cal' ? ' kcal' : 'g'}`, pct, color };
+				return { key: String(ing.key), label: name, value: `${Math.round(val)}${macro === 'cal' ? ' kcal' : 'g'}`, pct, color };
 			})
 			.filter((s) => s.pct > 0.5);
 	}
@@ -340,7 +350,7 @@
 				const pctOfDri = (amount / mr.dri) * 100;
 				const color = ingredientColorMap.get(ing.key) ?? '#666';
 				const info = MICRO_NAMES[microKey];
-				return { key: ing.key, label: food.name, value: `${fmtMicro(amount, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pctOfDri, color };
+				return { key: String(ing.key), label: food.name, value: `${fmtMicro(amount, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pctOfDri, color };
 			})
 			.filter((s): s is NonNullable<typeof s> => s !== null && s.pct > 0.5);
 	}
@@ -400,7 +410,6 @@
 				<div class="target-input-row">
 					<select bind:value={objective} onchange={triggerSolve}>
 						<option value="minimize_oil">Minimize oil</option>
-						<option value="minimize_rice_deviation">Minimize rice deviation</option>
 						<option value="minimize_total_grams">Minimize total grams</option>
 					</select>
 				</div>
