@@ -3,7 +3,8 @@
 from daily_chow.food_db import load_foods
 from daily_chow.solver import (
     IngredientInput,
-    Objective,
+    PRIORITY_MICROS,
+    PRIORITY_TOTAL_WEIGHT,
     Solution,
     Targets,
     solve,
@@ -78,15 +79,29 @@ class TestSolverConstraints:
 
 
 class TestSolverObjectives:
-    def test_minimize_oil_produces_less_oil(self):
+    def test_priority_ordering_affects_solution(self):
+        """Micros-first vs weight-first should produce different solutions
+        when there's slack for the solver to trade off between them."""
         ingredients = _default_ingredients()
-        sol_oil = solve(ingredients, objective=Objective.MINIMIZE_OIL)
-        sol_grams = solve(ingredients, objective=Objective.MINIMIZE_TOTAL_GRAMS)
-        assert sol_oil.status in ("optimal", "feasible")
-        assert sol_grams.status in ("optimal", "feasible")
-        oil_min = _grams_for(sol_oil, "Avocado Oil")
-        oil_other = _grams_for(sol_grams, "Avocado Oil")
-        assert oil_min <= oil_other
+        micro_targets = {"iron_mg": 4.9, "calcium_mg": 500.0, "magnesium_mg": 200.0}
+
+        sol_micros_first = solve(
+            ingredients,
+            micro_targets=micro_targets,
+            priorities=[PRIORITY_MICROS, PRIORITY_TOTAL_WEIGHT],
+        )
+        sol_weight_first = solve(
+            ingredients,
+            micro_targets=micro_targets,
+            priorities=[PRIORITY_TOTAL_WEIGHT, PRIORITY_MICROS],
+        )
+        assert sol_micros_first.status in ("optimal", "feasible")
+        assert sol_weight_first.status in ("optimal", "feasible")
+
+        # When micros are top priority, total grams should be >= weight-first
+        total_micros_first = sum(i.grams for i in sol_micros_first.ingredients)
+        total_weight_first = sum(i.grams for i in sol_weight_first.ingredients)
+        assert total_weight_first <= total_micros_first
 
 
 class TestMicroOptimization:
@@ -99,3 +114,62 @@ class TestMicroOptimization:
         assert sol.status in ("optimal", "feasible")
         assert len(sol.micro_totals) > 0
         assert "calcium_mg" in sol.micro_totals
+
+    def test_minimax_distributes_shortfall(self):
+        """Minimax should distribute coverage across nutrients rather than
+        satisfying some fully while leaving others at 0%."""
+        # Use targets that can't all be 100% satisfied — forces tradeoff
+        sol = solve(
+            _default_ingredients(),
+            micro_targets={
+                "calcium_mg": 800.0,
+                "iron_mg": 10.0,
+                "magnesium_mg": 500.0,
+                "vitamin_c_mg": 200.0,
+            },
+        )
+        assert sol.status in ("optimal", "feasible")
+        # Each nutrient should get some coverage (none near 0%)
+        for key, target in [("calcium_mg", 800.0), ("iron_mg", 10.0),
+                            ("magnesium_mg", 500.0), ("vitamin_c_mg", 200.0)]:
+            total = sol.micro_totals.get(key, 0.0)
+            pct = total / target * 100
+            assert pct > 5, f"{key} got only {pct:.1f}% — minimax should prevent deep gaps"
+
+    def test_ul_prevents_excess(self):
+        """A tight UL on iron should cap the solver's iron intake."""
+        # First solve without UL to find unconstrained iron
+        sol_free = solve(
+            _default_ingredients(),
+            micro_targets={"iron_mg": 10.0},
+        )
+        assert sol_free.status in ("optimal", "feasible")
+        free_iron = sol_free.micro_totals.get("iron_mg", 0.0)
+
+        # Set UL midway between unconstrained result and what minimums force
+        # (min-grams alone give ~12.8 mg, unconstrained ~18.6 mg)
+        iron_ul = free_iron * 0.85
+        sol = solve(
+            _default_ingredients(),
+            micro_targets={"iron_mg": 10.0},
+            micro_uls={"iron_mg": iron_ul},
+        )
+        assert sol.status in ("optimal", "feasible")
+        iron_total = sol.micro_totals.get("iron_mg", 0.0)
+        # Allow small floating-point tolerance from integer rounding
+        assert iron_total <= iron_ul + 0.1, (
+            f"Iron {iron_total:.2f} exceeded UL {iron_ul}"
+        )
+        # Confirm the UL actually constrained the result
+        assert iron_total < free_iron, (
+            f"UL should have reduced iron from {free_iron:.2f}"
+        )
+
+    def test_ul_does_not_break_feasibility(self):
+        """A loose UL should not prevent finding a solution."""
+        sol = solve(
+            _default_ingredients(),
+            micro_targets={"iron_mg": 4.0, "calcium_mg": 500.0},
+            micro_uls={"iron_mg": 45.0, "calcium_mg": 2500.0},
+        )
+        assert sol.status in ("optimal", "feasible")

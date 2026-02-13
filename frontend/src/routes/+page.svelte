@@ -58,8 +58,7 @@
 	let pinnedMeals = $state<PinnedMeal[]>([]);
 	let calTol = $state(50);
 	let proTol = $state(5);
-	let objective = $state('minimize_oil');
-	let microStrategy = $state('blended');
+	let priorities = $state<string[]>(['micros', 'total_weight']);
 	let theme = $state<'dark' | 'light'>('dark');
 
 	// Slider scale
@@ -278,11 +277,10 @@
 					cal_tolerance: calTol,
 					protein_tolerance: proTol
 				},
-				objective,
 				sex,
 				ageGroup,
 				Array.from(optimizeNutrients),
-				microStrategy,
+				priorities,
 				pinnedMicros
 			);
 		} catch {
@@ -302,7 +300,7 @@
 		const state = {
 			dailyCal, dailyPro, dailyFiberMin,
 			pinnedMeals, pinnedMealsOpen,
-			calTol, proTol, objective, microStrategy, theme, ingredients,
+			calTol, proTol, priorities, theme, ingredients,
 			sex, ageGroup,
 			optimizeNutrients: Array.from(optimizeNutrients),
 			microsOpen, sliderAbsMax
@@ -328,10 +326,12 @@
 			if (s.pinnedMealsOpen !== undefined) pinnedMealsOpen = s.pinnedMealsOpen;
 			calTol = s.calTol ?? 50;
 			proTol = s.proTol ?? 5;
-			objective = s.objective ?? 'minimize_oil';
-			// Drop removed objective
-			if (objective === 'minimize_rice_deviation') objective = 'minimize_oil';
-			microStrategy = s.microStrategy ?? 'blended';
+			// Migrate from old objective/microStrategy to priorities
+			if (s.priorities && Array.isArray(s.priorities)) {
+				priorities = s.priorities;
+			} else {
+				priorities = ['micros', 'total_weight'];
+			}
 			if (s.theme === 'light' || s.theme === 'dark') theme = s.theme;
 			if (s.ingredients) {
 				ingredients = s.ingredients;
@@ -376,7 +376,13 @@
 
 	// ── Helpers ──────────────────────────────────────────────────────
 
-	function pctColor(pct: number): string {
+	function pctColor(pct: number, earPct: number | null = null, ulPct: number | null = null): string {
+		if (ulPct !== null && pct > ulPct) return '#ef4444';
+		if (pct >= 100) return '#22c55e';
+		if (earPct !== null) {
+			if (pct >= earPct) return '#f59e0b';
+			return '#ef4444';
+		}
 		if (pct >= 80) return '#22c55e';
 		if (pct >= 50) return '#f59e0b';
 		return '#ef4444';
@@ -528,22 +534,17 @@
 					<span class="unit">g</span>
 				</div>
 			</div>
-			<div class="target-group">
-				<label>Objective</label>
-				<div class="target-input-row">
-					<select bind:value={objective} onchange={triggerSolve}>
-						<option value="minimize_oil">Minimize oil</option>
-						<option value="minimize_total_grams">Minimize total grams</option>
-					</select>
-				</div>
-			</div>
-			<div class="target-group">
-				<label>Micro strategy</label>
-				<div class="target-input-row">
-					<select bind:value={microStrategy} onchange={triggerSolve}>
-						<option value="blended">Blended</option>
-						<option value="lexicographic">Lexicographic</option>
-					</select>
+			<div class="target-group priority-group">
+				<label>Solve priorities</label>
+				<div class="priority-list">
+					{#each priorities as p, i}
+						<div class="priority-row">
+							<span class="priority-rank">{i + 1}.</span>
+							<button class="priority-btn" disabled={i === 0} onclick={() => { [priorities[i - 1], priorities[i]] = [priorities[i], priorities[i - 1]]; priorities = [...priorities]; triggerSolve(); }} title="Move up">&#9650;</button>
+							<button class="priority-btn" disabled={i === priorities.length - 1} onclick={() => { [priorities[i], priorities[i + 1]] = [priorities[i + 1], priorities[i]]; priorities = [...priorities]; triggerSolve(); }} title="Move down">&#9660;</button>
+							<span class="priority-label">{p === 'micros' ? 'Micronutrient coverage' : 'Minimize total weight'}</span>
+						</div>
+					{/each}
 				</div>
 			</div>
 			<div class="target-group">
@@ -745,7 +746,11 @@
 									{@const m = solution.micros[key]}
 									{@const info = MICRO_NAMES[key]}
 									{#if m && info}
-										{@const barPct = Math.min(m.pct, 100)}
+										{@const earPct = m.ear !== null && m.dri > 0 ? m.ear / m.dri * 100 : null}
+										{@const ulPct = m.ul !== null && m.dri > 0 ? m.ul / m.dri * 100 : null}
+										{@const barMax = 200}
+										{@const barPct = Math.min(m.pct / barMax * 100, 100)}
+										{@const zoneColor = pctColor(m.pct, earPct, ulPct)}
 										<div class="micro-row-wrapper">
 											<label class="micro-row" class:dimmed={!optimizeNutrients.has(key)}>
 												<input
@@ -756,12 +761,18 @@
 												<span class="micro-name">{info.name}</span>
 												<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 												<div class="micro-bar-track clickable" onclick={(e) => { e.preventDefault(); e.stopPropagation(); expandedMicro = expandedMicro === key ? null : key; }}>
+													{#if earPct !== null || ulPct !== null}
+														{@const rangeLeft = earPct !== null ? Math.min(earPct / barMax * 100, 100) : 0}
+														{@const rangeRight = ulPct !== null ? Math.min(ulPct / barMax * 100, 100) : 100}
+														<div class="micro-bar-range" style="left: {rangeLeft}%; right: {100 - rangeRight}%; background: {zoneColor}"></div>
+													{/if}
 													<div
 														class="micro-bar-fill"
-														style="width: {barPct}%; background: {pctColor(m.pct)}"
+														style="width: {barPct}%; background: {zoneColor}"
 													></div>
+													<div class="micro-bar-rdi-tick" style="left: 50%"></div>
 												</div>
-												<span class="micro-pct" style="color: {pctColor(m.pct)}">{Math.round(m.pct)}%</span>
+												<span class="micro-pct" style="color: {zoneColor}">{Math.round(m.pct)}%</span>
 												<span class="micro-amounts">
 													{fmtMicro(m.total + m.pinned, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
 												</span>
@@ -938,6 +949,55 @@
 	.target-group select:focus {
 		border-color: #3b82f6;
 		outline: none;
+	}
+
+	.priority-group {
+		min-width: 200px;
+	}
+
+	.priority-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.priority-row {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 13px;
+	}
+
+	.priority-rank {
+		width: 16px;
+		text-align: right;
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.priority-btn {
+		background: none;
+		border: 1px solid var(--border-input);
+		border-radius: 4px;
+		color: var(--text-muted);
+		cursor: pointer;
+		padding: 1px 4px;
+		font-size: 10px;
+		line-height: 1;
+	}
+
+	.priority-btn:hover:not(:disabled) {
+		color: var(--text-primary);
+		border-color: var(--text-primary);
+	}
+
+	.priority-btn:disabled {
+		opacity: 0.25;
+		cursor: default;
+	}
+
+	.priority-label {
+		color: var(--text-primary);
 	}
 
 	.unit {
@@ -1247,16 +1307,39 @@
 
 	.micro-bar-track {
 		height: 8px;
-		background: var(--bg-track);
-		border-radius: 4px;
-		overflow: hidden;
+		border-radius: 2px;
+		overflow: visible;
+		position: relative;
+		background: var(--bg-track, #e2e8f0);
+	}
+
+	.micro-bar-range {
+		position: absolute;
+		top: -4px;
+		bottom: -4px;
+		border-radius: 0;
+		opacity: 0.15;
 	}
 
 	.micro-bar-fill {
 		height: 100%;
-		border-radius: 4px;
+		border-radius: 2px;
 		transition: width 0.3s ease;
 		min-width: 2px;
+		position: relative;
+		z-index: 1;
+		overflow: hidden;
+	}
+
+	.micro-bar-rdi-tick {
+		position: absolute;
+		top: -3px;
+		bottom: -3px;
+		width: 2px;
+		background: var(--text-secondary, #64748b);
+		opacity: 0.5;
+		z-index: 2;
+		border-radius: 1px;
 	}
 
 	.micro-pct {

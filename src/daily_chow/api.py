@@ -7,13 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from daily_chow.dri import (
+    DRI_EAR,
     DRI_TARGETS,
+    DRI_UL,
     MICRO_INFO,
     AgeGroup,
     Sex,
 )
 from daily_chow.food_db import load_foods
-from daily_chow.solver import IngredientInput, MicroStrategy, Objective, Targets, solve
+from daily_chow.solver import DEFAULT_PRIORITIES, IngredientInput, Targets, solve
 
 app = FastAPI(title="Daily Chow API")
 
@@ -45,8 +47,7 @@ class TargetsRequest(BaseModel):
 class SolveRequest(BaseModel):
     ingredients: list[IngredientRequest]
     targets: TargetsRequest = TargetsRequest()
-    objective: str = "minimize_oil"
-    micro_strategy: str = "blended"
+    priorities: list[str] = list(DEFAULT_PRIORITIES)
     sex: str = "male"
     age_group: str = "19-30"
     optimize_nutrients: list[str] = []
@@ -70,6 +71,8 @@ class MicroResult(BaseModel):
     remaining: float
     pct: float
     optimized: bool
+    ear: float | None = None
+    ul: float | None = None
 
 
 class SolveResponse(BaseModel):
@@ -156,12 +159,26 @@ def post_solve(req: SolveRequest) -> SolveResponse:
             if remaining > 0 and k in dri:
                 micro_targets[k] = remaining
 
-    objective = Objective(req.objective)
-    strategy = MicroStrategy(req.micro_strategy)
-    solution = solve(ingredient_inputs, targets, objective, micro_targets=micro_targets, micro_strategy=strategy)
+    # Build UL constraints: for each nutrient with a UL, subtract pinned amounts
+    ul_table = DRI_UL.get((sex, age_group), {})
+    micro_uls: dict[str, float] | None = None
+    if ul_table:
+        micro_uls = {}
+        for k, ul_val in ul_table.items():
+            pinned_val = req.pinned_micros.get(k, 0.0)
+            remaining_ul = ul_val - pinned_val
+            if remaining_ul > 0:
+                micro_uls[k] = remaining_ul
+
+    solution = solve(
+        ingredient_inputs, targets,
+        micro_targets=micro_targets, micro_uls=micro_uls,
+        priorities=req.priorities,
+    )
 
     # Build micro results for all 20 tracked nutrients
     optimized_set = set(req.optimize_nutrients)
+    ear_table = DRI_EAR.get((sex, age_group), {})
     micros: dict[str, MicroResult] = {}
     for key in MICRO_INFO:
         dri_val = dri.get(key, 0.0)
@@ -176,6 +193,8 @@ def post_solve(req: SolveRequest) -> SolveResponse:
             remaining=round(remaining_val, 2),
             pct=round(pct, 1),
             optimized=key in optimized_set,
+            ear=ear_table.get(key),
+            ul=ul_table.get(key),
         )
 
     return SolveResponse(

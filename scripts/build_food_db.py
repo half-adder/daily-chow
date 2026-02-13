@@ -163,14 +163,35 @@ def load_sr_legacy(path: Path) -> dict[int, dict]:
     return foods
 
 
+def _backfill_nutrients(foundation_food: dict, sr_food: dict) -> int:
+    """Copy missing nutrients from SR Legacy into a Foundation food entry.
+
+    Only backfills nutrients in KEEP_NUTRIENT_IDS that Foundation is missing.
+    Returns the number of nutrients added.
+    """
+    added = 0
+    for nid, amount in sr_food["nutrients"].items():
+        if nid not in foundation_food["nutrients"] and int(nid) in KEEP_NUTRIENT_IDS:
+            foundation_food["nutrients"][nid] = amount
+            added += 1
+    return added
+
+
 def merge_foods(foundation: dict[int, dict], sr_legacy: dict[int, dict]) -> dict[int, dict]:
-    """Merge datasets: Foundation preferred, SR Legacy fallback."""
+    """Merge datasets: Foundation preferred, SR Legacy fallback for missing nutrients."""
     merged: dict[int, dict] = {}
     foundation_kept = 0
     sr_only = 0
+    backfill_foods = 0
+    backfill_nutrients = 0
 
-    # Start with all Foundation foods
+    # Start with all Foundation foods, backfilling missing nutrients from SR Legacy
     for ndb, food in foundation.items():
+        if ndb in sr_legacy:
+            added = _backfill_nutrients(food, sr_legacy[ndb])
+            if added:
+                backfill_foods += 1
+                backfill_nutrients += added
         merged[food["fdc_id"]] = food
         foundation_kept += 1
 
@@ -181,6 +202,8 @@ def merge_foods(foundation: dict[int, dict], sr_legacy: dict[int, dict]) -> dict
             sr_only += 1
 
     print(f"\n  Merged: {foundation_kept} Foundation + {sr_only} SR Legacy-only = {len(merged)} total")
+    if backfill_foods:
+        print(f"  Backfilled {backfill_nutrients} nutrients across {backfill_foods} Foundation foods from SR Legacy")
 
     # Filter out excluded categories
     before = len(merged)

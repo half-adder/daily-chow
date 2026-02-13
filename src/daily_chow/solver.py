@@ -9,7 +9,6 @@ shortfall as a secondary objective.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 
 from ortools.sat.python import cp_model
 
@@ -27,15 +26,13 @@ MICRO_SCALE = 10_000
 # Ensures 100% shortfall of any nutrient contributes ~MICRO_NORM to penalty.
 MICRO_NORM = 100_000_000
 
+# Percentage scale for minimax: 0 = 0.00%, 10_000 = 100.00%
+PCT_SCALE = 10_000
 
-class Objective(Enum):
-    MINIMIZE_OIL = "minimize_oil"
-    MINIMIZE_TOTAL_GRAMS = "minimize_total_grams"
-
-
-class MicroStrategy(Enum):
-    BLENDED = "blended"  # micro shortfall + total grams at same priority level
-    LEXICOGRAPHIC = "lexicographic"  # micro >> total grams as separate levels
+# Priority constants for lexicographic objective ordering
+PRIORITY_MICROS = "micros"
+PRIORITY_TOTAL_WEIGHT = "total_weight"
+DEFAULT_PRIORITIES = [PRIORITY_MICROS, PRIORITY_TOTAL_WEIGHT]
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,9 +89,9 @@ def _micro_coeff(per_100g: float) -> int:
 def solve(
     ingredients: list[IngredientInput],
     targets: Targets = Targets(),
-    objective: Objective = Objective.MINIMIZE_OIL,
     micro_targets: dict[str, float] | None = None,
-    micro_strategy: MicroStrategy = MicroStrategy.BLENDED,
+    micro_uls: dict[str, float] | None = None,
+    priorities: list[str] | None = None,
     solver_timeout_s: float = 5.0,
 ) -> Solution:
     """Build and solve the CP-SAT model.
@@ -102,14 +99,20 @@ def solve(
     Args:
         ingredients: Enabled ingredients with their bounds.
         targets: Calorie/protein/fiber targets and tolerances.
-        objective: Which objective function to use.
         micro_targets: Nutrient key -> remaining DRI target (after smoothie).
             Only checked nutrients are included. None or empty disables micro opt.
+        micro_uls: Nutrient key -> remaining UL (after smoothie).
+            Hard constraint: total nutrient <= UL for each entry.
+        priorities: Ordered list of objective priorities for lexicographic
+            optimization. Valid values: "micros", "total_weight".
+            Default: ["micros", "total_weight"].
         solver_timeout_s: Maximum solver time in seconds.
 
     Returns:
         Solution with per-ingredient grams and computed macros.
     """
+    if priorities is None:
+        priorities = list(DEFAULT_PRIORITIES)
     if not ingredients:
         return Solution(
             status="infeasible",
@@ -157,42 +160,69 @@ def solve(
     fib_min_scaled = targets.meal_fiber_min_g * SCALE
     model.add(total_fib >= fib_min_scaled)
 
-    # ── Micronutrient soft penalty ────────────────────────────────────
-    # For each checked nutrient, compute shortfall = max(0, target - total).
-    # Since we're minimizing, the solver will set shortfall to the tightest
-    # lower bound, which is exactly max(0, target - total).
+    # ── UL hard constraints ──────────────────────────────────────────
+    # Precompute per-nutrient total expressions (micro-scaled) for reuse
+    _nutrient_exprs: dict[str, cp_model.LinearExprT] = {}
+
+    def _get_nutrient_expr(key: str) -> cp_model.LinearExprT:
+        if key not in _nutrient_exprs:
+            coeffs: dict[int, int] = {}
+            for ing in ingredients:
+                c = _micro_coeff(ing.food.micros.get(key, 0.0))
+                if c > 0:
+                    coeffs[ing.key] = c
+            if coeffs:
+                _nutrient_exprs[key] = sum(coeffs[k] * gram_vars[k] for k in coeffs)
+            else:
+                _nutrient_exprs[key] = 0
+        return _nutrient_exprs[key]
+
+    if micro_uls:
+        for key, ul_val in micro_uls.items():
+            ul_scaled = round(ul_val * MICRO_SCALE)
+            if ul_scaled <= 0:
+                continue
+            model.add(_get_nutrient_expr(key) <= ul_scaled)
+
+    # ── Micronutrient minimax objective ────────────────────────────────
+    # Minimax: minimize the worst percentage shortfall across all checked
+    # nutrients, with sum-of-shortfalls as a tiebreaker.
+    worst_pct_var: cp_model.IntVar | None = None
+    max_worst_pct = 0
     micro_penalty: cp_model.LinearExprT = 0
     max_micro_penalty = 0
 
     if micro_targets:
+        pct_short_vars: list[cp_model.IntVar] = []
         shortfall_terms: list[cp_model.LinearExprT] = []
         for key, target_val in micro_targets.items():
             target_scaled = round(target_val * MICRO_SCALE)
             if target_scaled <= 0:
                 continue
 
-            # Per-gram coefficients for this nutrient
-            coeffs: dict[int, int] = {}
-            for ing in ingredients:
-                c = _micro_coeff(ing.food.micros.get(key, 0.0))
-                if c > 0:
-                    coeffs[ing.key] = c
+            total_nutrient = _get_nutrient_expr(key)
 
-            # Total nutrient from the meal (in micro-scaled units)
-            total_nutrient: cp_model.LinearExprT = 0
-            if coeffs:
-                total_nutrient = sum(
-                    coeffs[k] * gram_vars[k] for k in coeffs
-                )
-
-            # Shortfall variable (minimization pushes this to max(0, target - total))
+            # Shortfall variable (minimization pushes to max(0, target - total))
             shortfall = model.new_int_var(0, target_scaled, f"{key}_short")
             model.add(shortfall >= target_scaled - total_nutrient)
 
-            # Normalize: weight so 100% shortfall ≈ MICRO_NORM for all nutrients
+            # Percentage shortfall: pct_short in [0, PCT_SCALE]
+            # Encodes: pct_short / PCT_SCALE >= shortfall / target_scaled
+            # i.e.     pct_short * target_scaled >= shortfall * PCT_SCALE
+            pct_short = model.new_int_var(0, PCT_SCALE, f"{key}_pct_short")
+            model.add(pct_short * target_scaled >= shortfall * PCT_SCALE)
+            pct_short_vars.append(pct_short)
+
+            # Sum-of-shortfalls tiebreaker (same as before)
             weight = max(1, MICRO_NORM // target_scaled)
             shortfall_terms.append(shortfall * weight)
             max_micro_penalty += target_scaled * weight
+
+        if pct_short_vars:
+            worst_pct_var = model.new_int_var(0, PCT_SCALE, "worst_pct")
+            for ps in pct_short_vars:
+                model.add(worst_pct_var >= ps)
+            max_worst_pct = PCT_SCALE
 
         if shortfall_terms:
             micro_penalty = shortfall_terms[0]
@@ -200,51 +230,26 @@ def solve(
                 micro_penalty = micro_penalty + term
 
     # ── Objective ─────────────────────────────────────────────────────
-    # Three-level lexicographic: primary >> micro >> tiebreaker.
+    # Lexicographic optimization via user-specified priority order.
     # Implemented via weight hierarchy where each level's weight exceeds
     # the maximum possible contribution of all lower levels.
     max_total = sum(ing.max_g for ing in ingredients)
     total_grams = sum(gram_vars[k] for k in gram_vars)
 
-    # Compute primary expression based on objective type
-    if objective == Objective.MINIMIZE_OIL:
-        oil_keys = [
-            ing.key for ing in ingredients if ing.food.category == "Fats and Oils"
-        ]
-        if oil_keys:
-            primary_expr: cp_model.LinearExprT = sum(
-                gram_vars[k] for k in oil_keys
-            )
-            max_primary = sum(
-                ing.max_g for ing in ingredients if ing.key in set(oil_keys)
-            )
-        else:
-            abs_cal_dev = model.new_int_var(0, cal_tol_scaled, "abs_cal_dev")
-            model.add_abs_equality(abs_cal_dev, cal_dev)
-            primary_expr = abs_cal_dev
-            max_primary = cal_tol_scaled
+    # Build terms list in priority order
+    terms: list[tuple[cp_model.LinearExprT, int]] = []
+    for p in priorities:
+        if p == PRIORITY_MICROS:
+            if worst_pct_var is not None and max_worst_pct > 0:
+                terms.append((worst_pct_var, max_worst_pct))
+            if max_micro_penalty > 0:
+                terms.append((micro_penalty, max_micro_penalty))
+        elif p == PRIORITY_TOTAL_WEIGHT:
+            terms.append((total_grams, max_total))
 
-    else:  # MINIMIZE_TOTAL_GRAMS
-        primary_expr = total_grams
-        max_primary = max_total
-
-    # Build lexicographic objective: primary >> secondary [>> tertiary]
-    terms: list[tuple[cp_model.LinearExprT, int]] = [(primary_expr, max_primary)]
-
-    if max_micro_penalty > 0:
-        if micro_strategy == MicroStrategy.BLENDED:
-            # Blend micro shortfall with total grams at the same priority level.
-            # Filling one full nutrient gap is worth ~GRAMS_PER_GAP of extra food.
-            GRAMS_PER_GAP = 200
-            grams_cost = max(1, MICRO_NORM // GRAMS_PER_GAP)
-            blended = micro_penalty + total_grams * grams_cost
-            max_blended = max_micro_penalty + max_total * grams_cost
-            terms.append((blended, max_blended))
-        else:  # LEXICOGRAPHIC: micro >> total grams as separate levels
-            terms.append((micro_penalty, max_micro_penalty))
-            if objective != Objective.MINIMIZE_TOTAL_GRAMS:
-                terms.append((total_grams, max_total))
-    elif objective != Objective.MINIMIZE_TOTAL_GRAMS:
+    # Fallback: if no terms (e.g. no micros checked and total_weight not in list),
+    # minimize total grams as a sensible default.
+    if not terms:
         terms.append((total_grams, max_total))
 
     # Compute weights: w[-1]=1, w[i] = max[i+1] * w[i+1] + 1

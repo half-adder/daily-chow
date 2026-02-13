@@ -49,6 +49,8 @@ export interface MicroResult {
 	remaining: number;
 	pct: number;
 	optimized: boolean;
+	ear: number | null;
+	ul: number | null;
 }
 
 export interface SolveResponse {
@@ -70,17 +72,16 @@ export async function fetchFoods(): Promise<Record<number, Food>> {
 export async function solve(
 	ingredients: SolveIngredient[],
 	targets: SolveTargets,
-	objective: string,
 	sex: string,
 	age_group: string,
 	optimize_nutrients: string[],
-	micro_strategy: string,
+	priorities: string[],
 	pinned_micros: Record<string, number> = {}
 ): Promise<SolveResponse> {
 	const res = await fetch('/api/solve', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ingredients, targets, objective, sex, age_group, optimize_nutrients, micro_strategy, pinned_micros })
+		body: JSON.stringify({ ingredients, targets, sex, age_group, optimize_nutrients, priorities, pinned_micros })
 	});
 	return res.json();
 }

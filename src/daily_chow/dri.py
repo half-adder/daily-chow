@@ -145,3 +145,79 @@ DRI_TARGETS: dict[tuple[Sex, AgeGroup], dict[str, float]] = {
     (Sex.FEMALE, AgeGroup.AGE_51_70): _FEMALE_51_70,
     (Sex.FEMALE, AgeGroup.AGE_71_PLUS): _FEMALE_71_PLUS,
 }
+
+# ---------------------------------------------------------------------------
+# EAR (Estimated Average Requirement) – 50th percentile threshold
+# Nutrients without an EAR (AI-only: potassium, manganese, vitamin K) are omitted.
+# ---------------------------------------------------------------------------
+
+_EAR_MALE_19_30: dict[str, float] = {
+    "calcium_mg": 800,
+    "iron_mg": 6,
+    "magnesium_mg": 350,
+    "phosphorus_mg": 580,
+    "zinc_mg": 9.4,
+    "copper_mg": 0.7,
+    "selenium_mcg": 45,
+    "vitamin_c_mg": 75,
+    "thiamin_mg": 1.0,
+    "riboflavin_mg": 1.1,
+    "niacin_mg": 12,
+    "vitamin_b6_mg": 1.1,
+    "folate_mcg": 320,
+    "vitamin_b12_mcg": 2.0,
+    "vitamin_a_mcg": 625,
+    "vitamin_d_mcg": 10,
+    "vitamin_e_mg": 12,
+}
+
+_EAR_FEMALE_19_30: dict[str, float] = {
+    **_EAR_MALE_19_30,
+    "iron_mg": 8.1,
+    "magnesium_mg": 265,
+    "zinc_mg": 6.8,
+    "vitamin_c_mg": 60,
+    "thiamin_mg": 0.9,
+    "riboflavin_mg": 0.9,
+    "niacin_mg": 11,
+    "vitamin_a_mcg": 500,
+}
+
+DRI_EAR: dict[tuple[Sex, AgeGroup], dict[str, float]] = {
+    (Sex.MALE, AgeGroup.AGE_19_30): _EAR_MALE_19_30,
+    (Sex.FEMALE, AgeGroup.AGE_19_30): _EAR_FEMALE_19_30,
+}
+
+# ---------------------------------------------------------------------------
+# UL (Tolerable Upper Intake Level)
+# Nutrients without a UL (potassium, thiamin, riboflavin, B12, vitamin K) omitted.
+# Same values for M/F 19-30, 31-50, 51-70.
+# ---------------------------------------------------------------------------
+
+_UL_19_70: dict[str, float] = {
+    "calcium_mg": 2500,
+    "iron_mg": 45,
+    # Note: magnesium UL (350mg) applies only to supplemental/pharmacological
+    # sources, not dietary intake from food. Omitted here.
+    "phosphorus_mg": 4000,
+    "zinc_mg": 40,
+    "copper_mg": 10,
+    "manganese_mg": 11,
+    "selenium_mcg": 400,
+    "vitamin_c_mg": 2000,
+    "niacin_mg": 35,
+    "vitamin_b6_mg": 100,
+    "folate_mcg": 1000,
+    "vitamin_a_mcg": 3000,
+    "vitamin_d_mcg": 100,
+    "vitamin_e_mg": 1000,
+}
+
+DRI_UL: dict[tuple[Sex, AgeGroup], dict[str, float]] = {
+    (Sex.MALE, AgeGroup.AGE_19_30): _UL_19_70,
+    (Sex.MALE, AgeGroup.AGE_31_50): _UL_19_70,
+    (Sex.MALE, AgeGroup.AGE_51_70): _UL_19_70,
+    (Sex.FEMALE, AgeGroup.AGE_19_30): _UL_19_70,
+    (Sex.FEMALE, AgeGroup.AGE_31_50): _UL_19_70,
+    (Sex.FEMALE, AgeGroup.AGE_51_70): _UL_19_70,
+}
