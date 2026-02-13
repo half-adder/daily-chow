@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { fetchFoods, solve, type Food, type SolveResponse, type SolvedIngredient, type MicroResult } from '$lib/api';
+	import { fetchFoods, solve, type Food, type SolveResponse, type SolvedIngredient, type MicroResult, type PinnedMeal } from '$lib/api';
 	import IngredientRow from '$lib/components/IngredientRow.svelte';
 	import AddIngredientModal from '$lib/components/AddIngredientModal.svelte';
 	import StackedBar from '$lib/components/StackedBar.svelte';
@@ -54,9 +54,7 @@
 	let dailyCal = $state(3500);
 	let dailyPro = $state(160);
 	let dailyFiberMin = $state(40);
-	let smoothieCal = $state(720);
-	let smoothiePro = $state(30);
-	let smoothieFiber = $state(14);
+	let pinnedMeals = $state<PinnedMeal[]>([]);
 	let calTol = $state(50);
 	let proTol = $state(5);
 	let objective = $state('minimize_oil');
@@ -118,9 +116,31 @@
 	let expandedMicro = $state<string | null>(null);
 
 	// Derived
-	let mealCal = $derived(dailyCal - smoothieCal);
-	let mealPro = $derived(dailyPro - smoothiePro);
-	let mealFiberMin = $derived(dailyFiberMin - smoothieFiber);
+	const MACRO_KEYS = new Set(['calories_kcal', 'protein_g', 'fat_g', 'carbs_g', 'fiber_g']);
+
+	let pinnedTotals = $derived.by(() => {
+		const totals: Record<string, number> = {};
+		for (const meal of pinnedMeals) {
+			for (const [key, val] of Object.entries(meal.nutrients)) {
+				totals[key] = (totals[key] ?? 0) + val;
+			}
+		}
+		return totals;
+	});
+
+	let pinnedMicros = $derived.by(() => {
+		const micros: Record<string, number> = {};
+		for (const [key, val] of Object.entries(pinnedTotals)) {
+			if (!MACRO_KEYS.has(key)) {
+				micros[key] = val;
+			}
+		}
+		return micros;
+	});
+
+	let mealCal = $derived(dailyCal - (pinnedTotals.calories_kcal ?? 0));
+	let mealPro = $derived(dailyPro - (pinnedTotals.protein_g ?? 0));
+	let mealFiberMin = $derived(dailyFiberMin - (pinnedTotals.fiber_g ?? 0));
 
 	let existingKeys = $derived(new Set<number>(ingredients.map((i) => i.key)));
 
@@ -228,7 +248,8 @@
 				sex,
 				ageGroup,
 				Array.from(optimizeNutrients),
-				microStrategy
+				microStrategy,
+				pinnedMicros
 			);
 		} catch {
 			solution = null;
@@ -246,7 +267,7 @@
 	function saveState() {
 		const state = {
 			dailyCal, dailyPro, dailyFiberMin,
-			smoothieCal, smoothiePro, smoothieFiber,
+			pinnedMeals,
 			calTol, proTol, objective, microStrategy, theme, ingredients,
 			sex, ageGroup,
 			optimizeNutrients: Array.from(optimizeNutrients),
@@ -269,9 +290,7 @@
 			dailyCal = s.dailyCal ?? 3500;
 			dailyPro = s.dailyPro ?? 160;
 			dailyFiberMin = s.dailyFiberMin ?? 40;
-			smoothieCal = s.smoothieCal ?? 720;
-			smoothiePro = s.smoothiePro ?? 30;
-			smoothieFiber = s.smoothieFiber ?? 14;
+			if (s.pinnedMeals) pinnedMeals = s.pinnedMeals;
 			calTol = s.calTol ?? 50;
 			proTol = s.proTol ?? 5;
 			objective = s.objective ?? 'minimize_oil';
@@ -371,11 +390,10 @@
 				return { key: String(ing.key), label: food.name, value: `${fmtMicro(amount, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pctOfDri, color };
 			})
 			.filter((s): s is NonNullable<typeof s> => s !== null && s.pct > 0.5);
-		// Add smoothie contribution as a distinct segment
-		if (mr.smoothie > 0) {
-			const smoothiePct = (mr.smoothie / mr.dri) * 100;
-			if (smoothiePct > 0.5) {
-				segments.push({ key: '_smoothie', label: 'Smoothie', value: `${fmtMicro(mr.smoothie, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: smoothiePct, color: '#94a3b8' });
+		if (mr.pinned > 0) {
+			const pinnedPct = (mr.pinned / mr.dri) * 100;
+			if (pinnedPct > 0.5) {
+				segments.push({ key: '_pinned', label: 'Pinned', value: `${fmtMicro(mr.pinned, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pinnedPct, color: '#94a3b8' });
 			}
 		}
 		return segments;
@@ -495,12 +513,6 @@
 				</div>
 			</div>
 		</div>
-		<div class="smoothie-row">
-			Smoothie:
-			<input type="number" bind:value={smoothieCal} onchange={triggerSolve} class="sm-input" /> kcal ·
-			<input type="number" bind:value={smoothiePro} onchange={triggerSolve} class="sm-input" />g pro ·
-			<input type="number" bind:value={smoothieFiber} onchange={triggerSolve} class="sm-input" />g fiber
-		</div>
 	</section>
 
 	<section class="ingredients-section">
@@ -550,9 +562,9 @@
 				</div>
 				<div class="total-item">
 					<span class="total-label">Day</span>
-					<span class="total-cal">{Math.round(solution.meal_calories_kcal + smoothieCal)} kcal</span>
-					<span class="total-pro">{Math.round(solution.meal_protein_g + smoothiePro)}g pro</span>
-					<span class="total-fib">{Math.round(solution.meal_fiber_g + smoothieFiber)}g fiber</span>
+					<span class="total-cal">{Math.round(solution.meal_calories_kcal + (pinnedTotals.calories_kcal ?? 0))} kcal</span>
+					<span class="total-pro">{Math.round(solution.meal_protein_g + (pinnedTotals.protein_g ?? 0))}g pro</span>
+					<span class="total-fib">{Math.round(solution.meal_fiber_g + (pinnedTotals.fiber_g ?? 0))}g fiber</span>
 				</div>
 				{#if macroPcts}
 					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -653,7 +665,7 @@
 												</div>
 												<span class="micro-pct" style="color: {pctColor(m.pct)}">{Math.round(m.pct)}%</span>
 												<span class="micro-amounts">
-													{fmtMicro(m.total + m.smoothie, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
+													{fmtMicro(m.total + m.pinned, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
 												</span>
 											</label>
 											{#if expandedMicro === key}
@@ -822,31 +834,6 @@
 	.unit {
 		font-size: 12px;
 		color: var(--text-muted);
-	}
-
-	.smoothie-row {
-		margin-top: 12px;
-		font-size: 13px;
-		color: var(--text-muted);
-		display: flex;
-		align-items: center;
-		gap: 6px;
-	}
-
-	.sm-input {
-		width: 48px;
-		padding: 3px 6px;
-		background: var(--bg-input);
-		border: 1px solid var(--border-input);
-		border-radius: 4px;
-		color: var(--text-secondary);
-		font-size: 12px;
-		text-align: center;
-	}
-
-	.sm-input:focus {
-		border-color: #3b82f6;
-		outline: none;
 	}
 
 	/* Hide number spinners */

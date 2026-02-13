@@ -36,9 +36,15 @@ export interface SolvedIngredient {
 	fiber_g: number;
 }
 
+export interface PinnedMeal {
+	id: string;
+	name: string;
+	nutrients: Record<string, number>;
+}
+
 export interface MicroResult {
 	total: number;
-	smoothie: number;
+	pinned: number;
 	dri: number;
 	remaining: number;
 	pct: number;
@@ -68,12 +74,13 @@ export async function solve(
 	sex: string,
 	age_group: string,
 	optimize_nutrients: string[],
-	micro_strategy: string
+	micro_strategy: string,
+	pinned_micros: Record<string, number> = {}
 ): Promise<SolveResponse> {
 	const res = await fetch('/api/solve', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ingredients, targets, objective, sex, age_group, optimize_nutrients, micro_strategy })
+		body: JSON.stringify({ ingredients, targets, objective, sex, age_group, optimize_nutrients, micro_strategy, pinned_micros })
 	});
 	return res.json();
 }

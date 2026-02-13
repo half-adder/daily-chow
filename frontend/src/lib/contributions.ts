@@ -110,7 +110,7 @@ export function computeGapScore(
 
 	for (const [key, mr] of Object.entries(microResults)) {
 		if (mr.pct >= 100) continue; // no gap
-		const gap = mr.dri - (mr.total + mr.smoothie);
+		const gap = mr.dri - (mr.total + mr.pinned);
 		if (gap <= 0) continue;
 
 		const per100g = food.micros[key];
@@ -132,7 +132,7 @@ export function countGapsFilled(
 
 	for (const [key, mr] of Object.entries(microResults)) {
 		if (mr.pct >= 100) continue;
-		const gap = mr.dri - (mr.total + mr.smoothie);
+		const gap = mr.dri - (mr.total + mr.pinned);
 		if (gap <= 0) continue;
 
 		const per100g = food.micros[key];
