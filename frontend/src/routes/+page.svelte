@@ -163,9 +163,9 @@
 
 	let macroPcts = $derived.by(() => {
 		if (!solution || solution.status === 'infeasible') return null;
-		const carbCal = solution.meal_carbs_g * 4;
-		const proCal = solution.meal_protein_g * 4;
-		const fatCal = solution.meal_fat_g * 9;
+		const carbCal = (solution.meal_carbs_g + (pinnedTotals.carbs_g ?? 0)) * 4;
+		const proCal = (solution.meal_protein_g + (pinnedTotals.protein_g ?? 0)) * 4;
+		const fatCal = (solution.meal_fat_g + (pinnedTotals.fat_g ?? 0)) * 9;
 		const total = carbCal + proCal + fatCal;
 		if (total <= 0) return null;
 		const carb = Math.round((carbCal / total) * 100);
@@ -391,22 +391,51 @@
 
 	function macroStackedSegments(macro: 'cal' | 'pro' | 'fat' | 'carb' | 'fiber') {
 		if (!solution || solution.status === 'infeasible') return [];
-		return solution.ingredients
+
+		const pinnedKeyMap: Record<string, string> = {
+			cal: 'calories_kcal', pro: 'protein_g', fat: 'fat_g', carb: 'carbs_g', fiber: 'fiber_g'
+		};
+		const mealTotalMap: Record<string, number> = {
+			cal: solution.meal_calories_kcal,
+			pro: solution.meal_protein_g,
+			fat: solution.meal_fat_g,
+			carb: solution.meal_carbs_g,
+			fiber: solution.meal_fiber_g,
+		};
+		const pinnedVal = pinnedTotals[pinnedKeyMap[macro]] ?? 0;
+		const dayTotal = mealTotalMap[macro] + pinnedVal;
+		if (dayTotal <= 0) return [];
+
+		const segments = solution.ingredients
 			.map((ing) => {
-				const contrib = contributions.get(ing.key);
 				const color = ingredientColorMap.get(ing.key) ?? '#666';
 				const food = foods[ing.key];
 				const name = food?.name ?? String(ing.key);
-				const pct = contrib?.macroPcts[macro] ?? 0;
 				let val = 0;
 				if (macro === 'cal') val = ing.calories_kcal;
 				else if (macro === 'pro') val = ing.protein_g;
 				else if (macro === 'fat') val = ing.fat_g;
 				else if (macro === 'carb') val = ing.carbs_g;
 				else val = ing.fiber_g;
+				const pct = (val / dayTotal) * 100;
 				return { key: String(ing.key), label: name, value: `${Math.round(val)}${macro === 'cal' ? ' kcal' : 'g'}`, pct, color };
 			})
 			.filter((s) => s.pct > 0.5);
+
+		if (pinnedVal > 0) {
+			const pinnedPct = (pinnedVal / dayTotal) * 100;
+			if (pinnedPct > 0.5) {
+				segments.push({
+					key: '_pinned',
+					label: 'Pinned',
+					value: `${Math.round(pinnedVal)}${macro === 'cal' ? ' kcal' : 'g'}`,
+					pct: pinnedPct,
+					color: '#94a3b8'
+				});
+			}
+		}
+
+		return segments;
 	}
 
 	function microStackedSegments(microKey: string) {
