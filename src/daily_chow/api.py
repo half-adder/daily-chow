@@ -78,6 +78,11 @@ class FoodResponse(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 @app.get("/foods")
 def get_foods() -> dict[str, FoodResponse]:
     return {
