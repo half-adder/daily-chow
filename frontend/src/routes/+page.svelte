@@ -285,7 +285,12 @@
 				Array.from(optimizeNutrients),
 				priorities,
 				pinnedMicros,
-				{ carb_pct: carbPct, protein_pct: proteinPct, fat_pct: fatPct }
+				{
+					carb_pct: carbPct, protein_pct: proteinPct, fat_pct: fatPct,
+					pinned_carb_g: pinnedTotals.carbs_g ?? 0,
+					pinned_protein_g: pinnedTotals.protein_g ?? 0,
+					pinned_fat_g: pinnedTotals.fat_g ?? 0
+				}
 			);
 		} catch {
 			solution = null;

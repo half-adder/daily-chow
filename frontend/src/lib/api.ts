@@ -29,6 +29,9 @@ export interface MacroRatio {
 	carb_pct: number;
 	protein_pct: number;
 	fat_pct: number;
+	pinned_carb_g: number;
+	pinned_protein_g: number;
+	pinned_fat_g: number;
 }
 
 export interface SolvedIngredient {

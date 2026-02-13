@@ -47,6 +47,9 @@ class MacroRatioRequest(BaseModel):
     carb_pct: int = 50
     protein_pct: int = 25
     fat_pct: int = 25
+    pinned_carb_g: float = 0.0
+    pinned_protein_g: float = 0.0
+    pinned_fat_g: float = 0.0
 
 
 class SolveRequest(BaseModel):
@@ -181,6 +184,9 @@ def post_solve(req: SolveRequest) -> SolveResponse:
             carb_pct=req.macro_ratio.carb_pct,
             protein_pct=req.macro_ratio.protein_pct,
             fat_pct=req.macro_ratio.fat_pct,
+            pinned_carb_g=req.macro_ratio.pinned_carb_g,
+            pinned_protein_g=req.macro_ratio.pinned_protein_g,
+            pinned_fat_g=req.macro_ratio.pinned_fat_g,
         )
 
     solution = solve(

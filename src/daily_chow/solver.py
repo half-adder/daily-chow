@@ -45,6 +45,11 @@ class MacroRatio:
     carb_pct: int = 50
     protein_pct: int = 25
     fat_pct: int = 25
+    # Pinned meal macros (grams) — added as constants so the solver
+    # optimizes the full-day ratio, not just the meal portion.
+    pinned_carb_g: float = 0.0
+    pinned_protein_g: float = 0.0
+    pinned_fat_g: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,32 +240,38 @@ def solve(
     max_macro_worst = 0
 
     if macro_ratio is not None:
-        carb_cal_expr = total_carb * 4
-        pro_cal_expr = total_pro * 4
-        fat_cal_expr = total_fat * 9
-        total_cal_expr = carb_cal_expr + pro_cal_expr + fat_cal_expr
+        # Include pinned meal macros as constants so the solver optimizes
+        # the full-day ratio (meal + pinned), not just the meal portion.
+        pinned_carb_cal = round(macro_ratio.pinned_carb_g * 4 * SCALE)
+        pinned_pro_cal = round(macro_ratio.pinned_protein_g * 4 * SCALE)
+        pinned_fat_cal = round(macro_ratio.pinned_fat_g * 9 * SCALE)
+
+        day_carb_cal = total_carb * 4 + pinned_carb_cal
+        day_pro_cal = total_pro * 4 + pinned_pro_cal
+        day_fat_cal = total_fat * 9 + pinned_fat_cal
+        day_total_cal = day_carb_cal + day_pro_cal + day_fat_cal
 
         max_cal = sum(
             (ing.max_g * _scaled_coeff(ing.food.carbs_g_per_100g) * 4
              + ing.max_g * _scaled_coeff(ing.food.protein_g_per_100g) * 4
              + ing.max_g * _scaled_coeff(ing.food.fat_g_per_100g) * 9)
             for ing in ingredients
-        )
+        ) + pinned_carb_cal + pinned_pro_cal + pinned_fat_cal
 
-        # Use the calorie target as a constant denominator for percentage
-        # deviation.  Calories are tightly bounded by the band constraint,
-        # so this is an excellent approximation that keeps the model fully
-        # linear (avoiding add_multiplication_equality which can make the
-        # model infeasible when combined with other constraints).
-        cal_denom = targets.meal_calories_kcal * SCALE
+        # Use total daily calorie target as a constant denominator for
+        # percentage deviation.  Pinned cals are constant and meal cals are
+        # tightly bounded by the band constraint, so this is an excellent
+        # approximation that keeps the model fully linear.
+        pinned_cal = pinned_carb_cal + pinned_pro_cal + pinned_fat_cal
+        cal_denom = targets.meal_calories_kcal * SCALE + pinned_cal
 
         macro_dev_vars: list[cp_model.IntVar] = []
         for name, cal_expr, target_pct in [
-            ("carb", carb_cal_expr, macro_ratio.carb_pct),
-            ("pro", pro_cal_expr, macro_ratio.protein_pct),
-            ("fat", fat_cal_expr, macro_ratio.fat_pct),
+            ("carb", day_carb_cal, macro_ratio.carb_pct),
+            ("pro", day_pro_cal, macro_ratio.protein_pct),
+            ("fat", day_fat_cal, macro_ratio.fat_pct),
         ]:
-            diff_expr = cal_expr * 100 - total_cal_expr * target_pct
+            diff_expr = cal_expr * 100 - day_total_cal * target_pct
             bound = max_cal * 100
             diff_var = model.new_int_var(-bound, bound, f"macro_{name}_diff")
             model.add(diff_var == diff_expr)
