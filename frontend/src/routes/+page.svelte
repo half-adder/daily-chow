@@ -81,7 +81,7 @@
 
 	// Micronutrient optimization
 	let optimizeNutrients = $state<Set<string>>(new Set());
-	let microsOpen = $state(false);
+	let microsOpen = $state(true);
 
 	// Ingredients
 	interface IngredientEntry {
@@ -120,6 +120,7 @@
 
 	// Derived
 	const MACRO_KEYS = new Set(['calories_kcal', 'protein_g', 'fat_g', 'carbs_g', 'fiber_g']);
+	const MICRO_BAR_MAX = 200; // bar shows 0–200% of DRI
 
 	let pinnedTotals = $derived.by(() => {
 		const totals: Record<string, number> = {};
@@ -449,20 +450,22 @@
 		const mr = solution.micros[microKey];
 		if (!mr || mr.dri <= 0) return [];
 		const info = MICRO_NAMES[microKey];
+		// Scale so segments align with the foreground bar (0–MICRO_BAR_MAX% DRI = 0–100% track)
+		const scale = 100 / MICRO_BAR_MAX;
 		const segments = solution.ingredients
 			.map((ing) => {
 				const food = foods[ing.key];
 				if (!food) return null;
 				const per100g = food.micros[microKey] ?? 0;
 				const amount = (per100g * ing.grams) / 100;
-				const pctOfDri = (amount / mr.dri) * 100;
+				const pctOfTrack = (amount / mr.dri) * 100 * scale;
 				const color = ingredientColorMap.get(ing.key) ?? '#666';
-				return { key: String(ing.key), label: food.name, value: `${fmtMicro(amount, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pctOfDri, color };
+				return { key: String(ing.key), label: food.name, value: `${fmtMicro(amount, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pctOfTrack, color };
 			})
-			.filter((s): s is NonNullable<typeof s> => s !== null && s.pct > 0.5);
+			.filter((s): s is NonNullable<typeof s> => s !== null && s.pct > 0.25);
 		if (mr.pinned > 0) {
-			const pinnedPct = (mr.pinned / mr.dri) * 100;
-			if (pinnedPct > 0.5) {
+			const pinnedPct = (mr.pinned / mr.dri) * 100 * scale;
+			if (pinnedPct > 0.25) {
 				segments.push({ key: '_pinned', label: 'Pinned', value: `${fmtMicro(mr.pinned, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pinnedPct, color: '#94a3b8' });
 			}
 		}
@@ -614,6 +617,8 @@
 		{/if}
 	</section>
 
+	<div class="main-columns">
+	<div class="left-column">
 	<section class="ingredients-section">
 		<div class="ingredients-header">
 			<span></span>
@@ -716,84 +721,83 @@
 		{/if}
 	</section>
 
+	</div><!-- /.left-column -->
+
 	<!-- ── Micronutrient Report ─────────────────────────────────── -->
 	{#if solution && solution.status !== 'infeasible' && solution.micros}
 		<section class="micros-section">
-			<button class="micros-toggle" onclick={() => { microsOpen = !microsOpen; saveState(); }}>
-				<span class="micros-arrow" class:open={microsOpen}>▸</span>
-				Micronutrients
+			<div class="micros-header">
+				<span class="micros-title">Micronutrients</span>
 				{#if optimizeNutrients.size > 0}
 					<span class="micros-badge">{optimizeNutrients.size} optimized</span>
 				{/if}
-			</button>
+			</div>
 
-			{#if microsOpen}
-				<div class="micros-content">
-					{#each MICRO_TIERS as tier}
-						{@const gs = groupState(tier.keys)}
-						<div class="micro-group">
-							<label class="micro-group-header">
-								<input
-									type="checkbox"
-									checked={gs === 'all'}
-									indeterminate={gs === 'some'}
-									onchange={() => toggleGroup(tier.keys)}
-								/>
-								<span class="micro-group-name">{tier.name}</span>
-							</label>
-							<div class="micro-items">
-								{#each tier.keys as key}
-									{@const m = solution.micros[key]}
-									{@const info = MICRO_NAMES[key]}
-									{#if m && info}
-										{@const earPct = m.ear !== null && m.dri > 0 ? m.ear / m.dri * 100 : null}
-										{@const ulPct = m.ul !== null && m.dri > 0 ? m.ul / m.dri * 100 : null}
-										{@const barMax = 200}
-										{@const barPct = Math.min(m.pct / barMax * 100, 100)}
-										{@const zoneColor = pctColor(m.pct, earPct, ulPct)}
-										<div class="micro-row-wrapper">
-											<label class="micro-row" class:dimmed={!optimizeNutrients.has(key)}>
-												<input
-													type="checkbox"
-													checked={optimizeNutrients.has(key)}
-													onchange={() => toggleNutrient(key)}
-												/>
-												<span class="micro-name">{info.name}</span>
-												<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-												<div class="micro-bar-track clickable" onclick={(e) => { e.preventDefault(); e.stopPropagation(); expandedMicro = expandedMicro === key ? null : key; }}>
-													{#if earPct !== null || ulPct !== null}
-														{@const rangeLeft = earPct !== null ? Math.min(earPct / barMax * 100, 100) : 0}
-														{@const rangeRight = ulPct !== null ? Math.min(ulPct / barMax * 100, 100) : 100}
-														<div class="micro-bar-range" style="left: {rangeLeft}%; right: {100 - rangeRight}%; background: {zoneColor}"></div>
-													{/if}
-													<div
-														class="micro-bar-fill"
-														style="width: {barPct}%; background: {zoneColor}"
-													></div>
-													<div class="micro-bar-rdi-tick" style="left: 50%"></div>
+			<div class="micros-content">
+				{#each MICRO_TIERS as tier}
+					{@const gs = groupState(tier.keys)}
+					<div class="micro-group">
+						<label class="micro-group-header">
+							<input
+								type="checkbox"
+								checked={gs === 'all'}
+								indeterminate={gs === 'some'}
+								onchange={() => toggleGroup(tier.keys)}
+							/>
+							<span class="micro-group-name">{tier.name}</span>
+						</label>
+						<div class="micro-items">
+							{#each tier.keys as key}
+								{@const m = solution.micros[key]}
+								{@const info = MICRO_NAMES[key]}
+								{#if m && info}
+									{@const earPct = m.ear !== null && m.dri > 0 ? m.ear / m.dri * 100 : null}
+									{@const ulPct = m.ul !== null && m.dri > 0 ? m.ul / m.dri * 100 : null}
+									{@const barPct = Math.min(m.pct / MICRO_BAR_MAX * 100, 100)}
+									{@const zoneColor = pctColor(m.pct, earPct, ulPct)}
+									<div class="micro-row-wrapper">
+										<label class="micro-row" class:dimmed={!optimizeNutrients.has(key)}>
+											<input
+												type="checkbox"
+												checked={optimizeNutrients.has(key)}
+												onchange={() => toggleNutrient(key)}
+											/>
+											<span class="micro-name">{info.name}</span>
+											<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+											<div class="micro-bar-track clickable" onclick={(e) => { e.preventDefault(); e.stopPropagation(); expandedMicro = expandedMicro === key ? null : key; }}>
+												{#if earPct !== null || ulPct !== null}
+													{@const rangeLeft = earPct !== null ? Math.min(earPct / MICRO_BAR_MAX * 100, 100) : 0}
+													{@const rangeRight = ulPct !== null ? Math.min(ulPct / MICRO_BAR_MAX * 100, 100) : 100}
+													<div class="micro-bar-range" style="left: {rangeLeft}%; right: {100 - rangeRight}%; background: {zoneColor}"></div>
+												{/if}
+												<div
+													class="micro-bar-fill"
+													style="width: {barPct}%; background: {zoneColor}"
+												></div>
+												<div class="micro-bar-rdi-tick" style="left: 50%"></div>
+											</div>
+											<span class="micro-pct" style="color: {zoneColor}">{Math.round(m.pct)}%</span>
+											<span class="micro-amounts">
+												{fmtMicro(m.total + m.pinned, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
+											</span>
+										</label>
+										{#if expandedMicro === key}
+											<div class="micro-breakdown">
+												<div class="micro-breakdown-track">
+													<StackedBar segments={microStackedSegments(key)} height={16} />
 												</div>
-												<span class="micro-pct" style="color: {zoneColor}">{Math.round(m.pct)}%</span>
-												<span class="micro-amounts">
-													{fmtMicro(m.total + m.pinned, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
-												</span>
-											</label>
-											{#if expandedMicro === key}
-												<div class="micro-breakdown">
-													<div class="micro-breakdown-track">
-														<StackedBar segments={microStackedSegments(key)} height={16} />
-													</div>
-												</div>
-											{/if}
-										</div>
-									{/if}
-								{/each}
-							</div>
+											</div>
+										{/if}
+									</div>
+								{/if}
+							{/each}
 						</div>
-					{/each}
-				</div>
-			{/if}
+					</div>
+				{/each}
+			</div>
 		</section>
 	{/if}
+	</div><!-- /.main-columns -->
 </div>
 
 {#if showAddModal}
@@ -826,7 +830,7 @@
 	}
 
 	.app {
-		max-width: 1100px;
+		max-width: 1600px;
 		margin: 0 auto;
 		padding: 24px 20px;
 	}
@@ -1078,6 +1082,28 @@
 		background: var(--bg-hover);
 	}
 
+	/* ── Two-column layout ────────────────────────────── */
+
+	.main-columns {
+		display: grid;
+		grid-template-columns: 1fr 380px;
+		gap: 16px;
+		align-items: start;
+	}
+
+	.left-column {
+		min-width: 0;
+	}
+
+	@media (max-width: 1200px) {
+		.main-columns {
+			grid-template-columns: 1fr;
+		}
+		.micros-section {
+			position: static;
+		}
+	}
+
 	/* ── Totals ───────────────────────────────────────── */
 
 	.totals-section {
@@ -1187,39 +1213,22 @@
 		background: var(--bg-panel);
 		border: 1px solid var(--border);
 		border-radius: 12px;
-		margin-top: 16px;
-		overflow: hidden;
+		position: sticky;
+		top: 16px;
 	}
 
-	.micros-toggle {
-		width: 100%;
+	.micros-header {
 		padding: 14px 20px;
-		background: none;
-		border: none;
-		color: var(--text-primary);
-		font-size: 15px;
-		font-weight: 600;
-		cursor: pointer;
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		text-align: left;
-		transition: background 0.15s;
+		border-bottom: 1px solid var(--border);
 	}
 
-	.micros-toggle:hover {
-		background: var(--bg-hover);
-	}
-
-	.micros-arrow {
-		display: inline-block;
-		transition: transform 0.15s;
-		font-size: 14px;
-		color: var(--text-muted);
-	}
-
-	.micros-arrow.open {
-		transform: rotate(90deg);
+	.micros-title {
+		font-size: 15px;
+		font-weight: 600;
+		color: var(--text-primary);
 	}
 
 	.micros-badge {
@@ -1277,8 +1286,8 @@
 
 	.micro-row {
 		display: grid;
-		grid-template-columns: 20px 120px 1fr 48px 120px;
-		gap: 8px;
+		grid-template-columns: 20px 100px 1fr 40px 100px;
+		gap: 6px;
 		align-items: center;
 		padding: 4px 0;
 		cursor: pointer;
@@ -1390,8 +1399,8 @@
 
 	.micro-breakdown {
 		display: grid;
-		grid-template-columns: 20px 120px 1fr 48px 120px;
-		gap: 8px;
+		grid-template-columns: 20px 100px 1fr 40px 100px;
+		gap: 6px;
 		padding: 2px 0 6px;
 	}
 
