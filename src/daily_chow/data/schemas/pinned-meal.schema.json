@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pinned-meal.schema.json",
+  "title": "Pinned Meal",
+  "description": "A meal with fixed nutritional values that the solver works around.",
+  "oneOf": [
+    { "$ref": "#/$defs/meal" },
+    { "type": "array", "items": { "$ref": "#/$defs/meal" }, "minItems": 1 }
+  ],
+  "$defs": {
+    "meal": {
+      "type": "object",
+      "required": ["name", "nutrients"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nutrients": {
+          "type": "object",
+          "required": [
+            "calories_kcal",
+            "protein_g",
+            "fat_g",
+            "carbs_g",
+            "fiber_g"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "calories_kcal": { "type": "number", "minimum": 0 },
+            "protein_g": { "type": "number", "minimum": 0 },
+            "fat_g": { "type": "number", "minimum": 0 },
+            "carbs_g": { "type": "number", "minimum": 0 },
+            "fiber_g": { "type": "number", "minimum": 0 },
+            "calcium_mg": { "type": "number", "minimum": 0 },
+            "iron_mg": { "type": "number", "minimum": 0 },
+            "magnesium_mg": { "type": "number", "minimum": 0 },
+            "phosphorus_mg": { "type": "number", "minimum": 0 },
+            "potassium_mg": { "type": "number", "minimum": 0 },
+            "zinc_mg": { "type": "number", "minimum": 0 },
+            "copper_mg": { "type": "number", "minimum": 0 },
+            "manganese_mg": { "type": "number", "minimum": 0 },
+            "selenium_mcg": { "type": "number", "minimum": 0 },
+            "vitamin_c_mg": { "type": "number", "minimum": 0 },
+            "thiamin_mg": { "type": "number", "minimum": 0 },
+            "riboflavin_mg": { "type": "number", "minimum": 0 },
+            "niacin_mg": { "type": "number", "minimum": 0 },
+            "vitamin_b6_mg": { "type": "number", "minimum": 0 },
+            "folate_mcg": { "type": "number", "minimum": 0 },
+            "vitamin_b12_mcg": { "type": "number", "minimum": 0 },
+            "vitamin_a_mcg": { "type": "number", "minimum": 0 },
+            "vitamin_d_mcg": { "type": "number", "minimum": 0 },
+            "vitamin_e_mg": { "type": "number", "minimum": 0 },
+            "vitamin_k_mcg": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    }
+  }
+}
