@@ -80,6 +80,11 @@
 		cursor: default;
 	}
 
+	.segment:last-of-type {
+		border-top-right-radius: 6px;
+		border-bottom-right-radius: 6px;
+	}
+
 	.segment:hover {
 		opacity: 0.85;
 	}

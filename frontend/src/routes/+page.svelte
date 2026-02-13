@@ -359,7 +359,8 @@
 		if (!solution || solution.status === 'infeasible') return [];
 		const mr = solution.micros[microKey];
 		if (!mr || mr.dri <= 0) return [];
-		return solution.ingredients
+		const info = MICRO_NAMES[microKey];
+		const segments = solution.ingredients
 			.map((ing) => {
 				const food = foods[ing.key];
 				if (!food) return null;
@@ -367,10 +368,17 @@
 				const amount = (per100g * ing.grams) / 100;
 				const pctOfDri = (amount / mr.dri) * 100;
 				const color = ingredientColorMap.get(ing.key) ?? '#666';
-				const info = MICRO_NAMES[microKey];
 				return { key: String(ing.key), label: food.name, value: `${fmtMicro(amount, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pctOfDri, color };
 			})
 			.filter((s): s is NonNullable<typeof s> => s !== null && s.pct > 0.5);
+		// Add smoothie contribution as a distinct segment
+		if (mr.smoothie > 0) {
+			const smoothiePct = (mr.smoothie / mr.dri) * 100;
+			if (smoothiePct > 0.5) {
+				segments.push({ key: '_smoothie', label: 'Smoothie', value: `${fmtMicro(mr.smoothie, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: smoothiePct, color: '#94a3b8' });
+			}
+		}
+		return segments;
 	}
 
 	// ── Init ─────────────────────────────────────────────────────────
@@ -637,19 +645,11 @@
 												/>
 												<span class="micro-name">{info.name}</span>
 												<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-												<div class="micro-bar-track clickable" onclick={(e) => { e.preventDefault(); expandedMicro = expandedMicro === key ? null : key; }}>
-													{#if expandedMicro === key}
-														<div class="micro-bar-stacked">
-															{#each microStackedSegments(key) as seg (seg.key)}
-																<div class="micro-bar-segment" style="width: {seg.pct}%; background: {seg.color}" title="{seg.label}: {seg.value}"></div>
-															{/each}
-														</div>
-													{:else}
-														<div
-															class="micro-bar-fill"
-															style="width: {barPct}%; background: {pctColor(m.pct)}"
-														></div>
-													{/if}
+												<div class="micro-bar-track clickable" onclick={(e) => { e.preventDefault(); e.stopPropagation(); expandedMicro = expandedMicro === key ? null : key; }}>
+													<div
+														class="micro-bar-fill"
+														style="width: {barPct}%; background: {pctColor(m.pct)}"
+													></div>
 												</div>
 												<span class="micro-pct" style="color: {pctColor(m.pct)}">{Math.round(m.pct)}%</span>
 												<span class="micro-amounts">
@@ -658,7 +658,9 @@
 											</label>
 											{#if expandedMicro === key}
 												<div class="micro-breakdown">
-													<StackedBar segments={microStackedSegments(key)} height={16} />
+													<div class="micro-breakdown-track">
+														<StackedBar segments={microStackedSegments(key)} height={16} />
+													</div>
 												</div>
 											{/if}
 										</div>
@@ -1207,20 +1209,17 @@
 		flex-direction: column;
 	}
 
-	.micro-bar-stacked {
-		display: flex;
-		height: 100%;
-		border-radius: 4px;
-		overflow: hidden;
-	}
-
-	.micro-bar-segment {
-		height: 100%;
-		min-width: 1px;
-		transition: width 0.3s ease;
-	}
-
 	.micro-breakdown {
-		padding: 4px 0 6px 28px;
+		display: grid;
+		grid-template-columns: 20px 120px 1fr 48px 120px;
+		gap: 8px;
+		padding: 2px 0 6px;
+	}
+
+	.micro-breakdown-track {
+		grid-column: 3;
+		background: var(--bg-track);
+		border-radius: 6px;
+		overflow: hidden;
 	}
 </style>
