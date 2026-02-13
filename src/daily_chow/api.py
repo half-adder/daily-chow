@@ -9,10 +9,8 @@ from pydantic import BaseModel
 from daily_chow.dri import (
     DRI_TARGETS,
     MICRO_INFO,
-    SMOOTHIE_MICROS,
     AgeGroup,
     Sex,
-    remaining_targets,
 )
 from daily_chow.food_db import load_foods
 from daily_chow.solver import IngredientInput, MicroStrategy, Objective, Targets, solve
@@ -52,6 +50,7 @@ class SolveRequest(BaseModel):
     sex: str = "male"
     age_group: str = "19-30"
     optimize_nutrients: list[str] = []
+    pinned_micros: dict[str, float] = {}
 
 
 class SolvedIngredientResponse(BaseModel):
@@ -65,12 +64,12 @@ class SolvedIngredientResponse(BaseModel):
 
 
 class MicroResult(BaseModel):
-    total: float  # amount from the meal
-    smoothie: float  # amount from smoothie
-    dri: float  # full daily target
-    remaining: float  # max(0, dri - smoothie)
-    pct: float  # (total + smoothie) / dri * 100
-    optimized: bool  # whether this was in optimize_nutrients
+    total: float
+    pinned: float
+    dri: float
+    remaining: float
+    pct: float
+    optimized: bool
 
 
 class SolveResponse(BaseModel):
@@ -145,33 +144,34 @@ def post_solve(req: SolveRequest) -> SolveResponse:
     # Build micro targets for checked nutrients
     sex = Sex(req.sex)
     age_group = AgeGroup(req.age_group)
-    all_remaining = remaining_targets(sex, age_group)
+    dri = DRI_TARGETS[(sex, age_group)]
 
     micro_targets: dict[str, float] | None = None
     if req.optimize_nutrients:
-        micro_targets = {
-            k: all_remaining[k]
-            for k in req.optimize_nutrients
-            if k in all_remaining
-        }
+        micro_targets = {}
+        for k in req.optimize_nutrients:
+            dri_val = dri.get(k, 0.0)
+            pinned_val = req.pinned_micros.get(k, 0.0)
+            remaining = max(0.0, dri_val - pinned_val)
+            if remaining > 0 and k in dri:
+                micro_targets[k] = remaining
 
     objective = Objective(req.objective)
     strategy = MicroStrategy(req.micro_strategy)
     solution = solve(ingredient_inputs, targets, objective, micro_targets=micro_targets, micro_strategy=strategy)
 
     # Build micro results for all 20 tracked nutrients
-    dri = DRI_TARGETS[(sex, age_group)]
     optimized_set = set(req.optimize_nutrients)
     micros: dict[str, MicroResult] = {}
     for key in MICRO_INFO:
         dri_val = dri.get(key, 0.0)
-        smoothie_val = SMOOTHIE_MICROS.get(key, 0.0)
-        remaining_val = max(0.0, dri_val - smoothie_val)
+        pinned_val = req.pinned_micros.get(key, 0.0)
+        remaining_val = max(0.0, dri_val - pinned_val)
         meal_total = solution.micro_totals.get(key, 0.0)
-        pct = (meal_total + smoothie_val) / dri_val * 100 if dri_val > 0 else 0.0
+        pct = (meal_total + pinned_val) / dri_val * 100 if dri_val > 0 else 0.0
         micros[key] = MicroResult(
             total=round(meal_total, 2),
-            smoothie=round(smoothie_val, 2),
+            pinned=round(pinned_val, 2),
             dri=round(dri_val, 2),
             remaining=round(remaining_val, 2),
             pct=round(pct, 1),
