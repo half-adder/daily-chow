@@ -450,26 +450,26 @@
 		const mr = solution.micros[microKey];
 		if (!mr || mr.dri <= 0) return [];
 		const info = MICRO_NAMES[microKey];
-		// Scale so segments align with the foreground bar (0–MICRO_BAR_MAX% DRI = 0–100% track)
-		const scale = 100 / MICRO_BAR_MAX;
-		const segments = solution.ingredients
-			.map((ing) => {
-				const food = foods[ing.key];
-				if (!food) return null;
-				const per100g = food.micros[microKey] ?? 0;
-				const amount = (per100g * ing.grams) / 100;
-				const pctOfTrack = (amount / mr.dri) * 100 * scale;
-				const color = ingredientColorMap.get(ing.key) ?? '#666';
-				return { key: String(ing.key), label: food.name, value: `${fmtMicro(amount, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pctOfTrack, color };
-			})
-			.filter((s): s is NonNullable<typeof s> => s !== null && s.pct > 0.25);
-		if (mr.pinned > 0) {
-			const pinnedPct = (mr.pinned / mr.dri) * 100 * scale;
-			if (pinnedPct > 0.25) {
-				segments.push({ key: '_pinned', label: 'Pinned', value: `${fmtMicro(mr.pinned, info?.unit ?? '')} ${info?.unit ?? ''}`, pct: pinnedPct, color: '#94a3b8' });
-			}
+		// Compute raw amounts per ingredient
+		const raw: { key: string; label: string; value: string; amount: number; color: string }[] = [];
+		for (const ing of solution.ingredients) {
+			const food = foods[ing.key];
+			if (!food) continue;
+			const per100g = food.micros[microKey] ?? 0;
+			const amount = (per100g * ing.grams) / 100;
+			if (amount <= 0) continue;
+			const color = ingredientColorMap.get(ing.key) ?? '#666';
+			raw.push({ key: String(ing.key), label: food.name, value: `${fmtMicro(amount, info?.unit ?? '')} ${info?.unit ?? ''}`, amount, color });
 		}
-		return segments;
+		if (mr.pinned > 0) {
+			raw.push({ key: '_pinned', label: 'Pinned', value: `${fmtMicro(mr.pinned, info?.unit ?? '')} ${info?.unit ?? ''}`, amount: mr.pinned, color: '#94a3b8' });
+		}
+		// Scale so segments fill 100% of the track
+		const total = raw.reduce((s, r) => s + r.amount, 0);
+		if (total <= 0) return [];
+		return raw
+			.map((r) => ({ key: r.key, label: r.label, value: r.value, pct: (r.amount / total) * 100, color: r.color }))
+			.filter((s) => s.pct > 0.5);
 	}
 
 	// ── Init ─────────────────────────────────────────────────────────
@@ -756,15 +756,17 @@
 									{@const barPct = Math.min(m.pct / MICRO_BAR_MAX * 100, 100)}
 									{@const zoneColor = pctColor(m.pct, earPct, ulPct)}
 									<div class="micro-row-wrapper">
-										<label class="micro-row" class:dimmed={!optimizeNutrients.has(key)}>
+										<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+										<div class="micro-row" class:dimmed={!optimizeNutrients.has(key)}>
 											<input
 												type="checkbox"
 												checked={optimizeNutrients.has(key)}
 												onchange={() => toggleNutrient(key)}
 											/>
-											<span class="micro-name">{info.name}</span>
 											<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-											<div class="micro-bar-track clickable" onclick={(e) => { e.preventDefault(); e.stopPropagation(); expandedMicro = expandedMicro === key ? null : key; }}>
+											<span class="micro-name clickable" onclick={() => toggleNutrient(key)}>{info.name}</span>
+											<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+											<div class="micro-bar-track clickable" onclick={() => { expandedMicro = expandedMicro === key ? null : key; }}>
 												{#if earPct !== null || ulPct !== null}
 													{@const rangeLeft = earPct !== null ? Math.min(earPct / MICRO_BAR_MAX * 100, 100) : 0}
 													{@const rangeRight = ulPct !== null ? Math.min(ulPct / MICRO_BAR_MAX * 100, 100) : 100}
@@ -780,7 +782,7 @@
 											<span class="micro-amounts">
 												{fmtMicro(m.total + m.pinned, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
 											</span>
-										</label>
+										</div>
 										{#if expandedMicro === key}
 											<div class="micro-breakdown">
 												<div class="micro-breakdown-track">
@@ -1398,14 +1400,10 @@
 	}
 
 	.micro-breakdown {
-		display: grid;
-		grid-template-columns: 20px 100px 1fr 40px 100px;
-		gap: 6px;
 		padding: 2px 0 6px;
 	}
 
 	.micro-breakdown-track {
-		grid-column: 3;
 		background: var(--bg-track);
 		border-radius: 6px;
 		overflow: hidden;
