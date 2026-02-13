@@ -158,9 +158,9 @@
 
 		<div class="macros-cell">
 			{#if solved}
-				<span class="macro-cal">{Math.round(solved.calories)}</span>
+				<span class="macro-cal">{Math.round(solved.calories_kcal)}</span>
 				<span class="macro-sep">/</span>
-				<span class="macro-pro">{Math.round(solved.protein)}g</span>
+				<span class="macro-pro">{Math.round(solved.protein_g)}g</span>
 			{/if}
 		</div>
 

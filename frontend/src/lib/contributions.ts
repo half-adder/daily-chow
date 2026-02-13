@@ -53,22 +53,22 @@ export function computeContributions(
 	const result = new Map<number, IngredientContribution>();
 	if (solution.status === 'infeasible') return result;
 
-	const totalCal = solution.meal_calories || 1;
-	const totalPro = solution.meal_protein || 1;
-	const totalFat = solution.meal_fat || 1;
-	const totalCarb = solution.meal_carbs || 1;
-	const totalFiber = solution.meal_fiber || 1;
+	const totalCal = solution.meal_calories_kcal || 1;
+	const totalPro = solution.meal_protein_g || 1;
+	const totalFat = solution.meal_fat_g || 1;
+	const totalCarb = solution.meal_carbs_g || 1;
+	const totalFiber = solution.meal_fiber_g || 1;
 
 	for (const ing of solution.ingredients) {
 		const food = foods[ing.key];
 		if (!food) continue;
 
 		const macroPcts: MacroPcts = {
-			cal: (ing.calories / totalCal) * 100,
-			pro: (ing.protein / totalPro) * 100,
-			fat: (ing.fat / totalFat) * 100,
-			carb: (ing.carbs / totalCarb) * 100,
-			fiber: (ing.fiber / totalFiber) * 100,
+			cal: (ing.calories_kcal / totalCal) * 100,
+			pro: (ing.protein_g / totalPro) * 100,
+			fat: (ing.fat_g / totalFat) * 100,
+			carb: (ing.carbs_g / totalCarb) * 100,
+			fiber: (ing.fiber_g / totalFiber) * 100,
 		};
 
 		const micros: Record<string, MicroContrib> = {};

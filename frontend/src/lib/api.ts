@@ -3,11 +3,11 @@ export interface Food {
 	name: string;
 	subtitle: string;
 	usda_description: string;
-	cal_per_100g: number;
-	protein_per_100g: number;
-	fat_per_100g: number;
-	carbs_per_100g: number;
-	fiber_per_100g: number;
+	calories_kcal_per_100g: number;
+	protein_g_per_100g: number;
+	fat_g_per_100g: number;
+	carbs_g_per_100g: number;
+	fiber_g_per_100g: number;
 	category: string;
 	micros: Record<string, number>;
 }
@@ -19,9 +19,9 @@ export interface SolveIngredient {
 }
 
 export interface SolveTargets {
-	meal_calories: number;
-	meal_protein: number;
-	meal_fiber_min: number;
+	meal_calories_kcal: number;
+	meal_protein_g: number;
+	meal_fiber_min_g: number;
 	cal_tolerance: number;
 	protein_tolerance: number;
 }
@@ -29,11 +29,11 @@ export interface SolveTargets {
 export interface SolvedIngredient {
 	key: number; // FDC ID
 	grams: number;
-	calories: number;
-	protein: number;
-	fat: number;
-	carbs: number;
-	fiber: number;
+	calories_kcal: number;
+	protein_g: number;
+	fat_g: number;
+	carbs_g: number;
+	fiber_g: number;
 }
 
 export interface MicroResult {
@@ -48,11 +48,11 @@ export interface MicroResult {
 export interface SolveResponse {
 	status: string;
 	ingredients: SolvedIngredient[];
-	meal_calories: number;
-	meal_protein: number;
-	meal_fat: number;
-	meal_carbs: number;
-	meal_fiber: number;
+	meal_calories_kcal: number;
+	meal_protein_g: number;
+	meal_fat_g: number;
+	meal_carbs_g: number;
+	meal_fiber_g: number;
 	micros: Record<string, MicroResult>;
 }
 

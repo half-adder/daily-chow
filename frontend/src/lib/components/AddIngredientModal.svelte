@@ -75,7 +75,7 @@
 					<span class="result-name">{food.name}</span>
 					<span class="result-note">{food.subtitle}</span>
 					<span class="result-macros">
-						{food.cal_per_100g} kcal · {food.protein_per_100g}g pro · {food.fiber_per_100g}g fiber
+						{food.calories_kcal_per_100g} kcal · {food.protein_g_per_100g}g pro · {food.fiber_g_per_100g}g fiber
 					</span>
 					<span class="result-meta">
 						{#if gaps > 0}

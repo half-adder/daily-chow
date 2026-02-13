@@ -139,9 +139,9 @@
 
 	let macroPcts = $derived.by(() => {
 		if (!solution || solution.status === 'infeasible') return null;
-		const carbCal = solution.meal_carbs * 4;
-		const proCal = solution.meal_protein * 4;
-		const fatCal = solution.meal_fat * 9;
+		const carbCal = solution.meal_carbs_g * 4;
+		const proCal = solution.meal_protein_g * 4;
+		const fatCal = solution.meal_fat_g * 9;
 		const total = carbCal + proCal + fatCal;
 		if (total <= 0) return null;
 		const carb = Math.round((carbCal / total) * 100);
@@ -208,8 +208,8 @@
 		const enabled = ingredients.filter((i) => i.enabled);
 		if (enabled.length === 0) {
 			solution = {
-				status: 'infeasible', ingredients: [], meal_calories: 0, meal_protein: 0,
-				meal_fat: 0, meal_carbs: 0, meal_fiber: 0, micros: {}
+				status: 'infeasible', ingredients: [], meal_calories_kcal: 0, meal_protein_g: 0,
+				meal_fat_g: 0, meal_carbs_g: 0, meal_fiber_g: 0, micros: {}
 			};
 			return;
 		}
@@ -218,9 +218,9 @@
 			solution = await solve(
 				enabled.map((i) => ({ key: i.key, min_g: i.minG, max_g: i.maxG })),
 				{
-					meal_calories: mealCal,
-					meal_protein: mealPro,
-					meal_fiber_min: mealFiberMin,
+					meal_calories_kcal: mealCal,
+					meal_protein_g: mealPro,
+					meal_fiber_min_g: mealFiberMin,
 					cal_tolerance: calTol,
 					protein_tolerance: proTol
 				},
@@ -345,11 +345,11 @@
 				const name = food?.name ?? String(ing.key);
 				const pct = contrib?.macroPcts[macro] ?? 0;
 				let val = 0;
-				if (macro === 'cal') val = ing.calories;
-				else if (macro === 'pro') val = ing.protein;
-				else if (macro === 'fat') val = ing.fat;
-				else if (macro === 'carb') val = ing.carbs;
-				else val = ing.fiber;
+				if (macro === 'cal') val = ing.calories_kcal;
+				else if (macro === 'pro') val = ing.protein_g;
+				else if (macro === 'fat') val = ing.fat_g;
+				else if (macro === 'carb') val = ing.carbs_g;
+				else val = ing.fiber_g;
 				return { key: String(ing.key), label: name, value: `${Math.round(val)}${macro === 'cal' ? ' kcal' : 'g'}`, pct, color };
 			})
 			.filter((s) => s.pct > 0.5);
@@ -544,15 +544,15 @@
 			<div class="totals-grid">
 				<div class="total-item">
 					<span class="total-label">Meal</span>
-					<span class="total-cal">{Math.round(solution.meal_calories)} kcal</span>
-					<span class="total-pro">{Math.round(solution.meal_protein)}g pro</span>
-					<span class="total-fib">{Math.round(solution.meal_fiber)}g fiber</span>
+					<span class="total-cal">{Math.round(solution.meal_calories_kcal)} kcal</span>
+					<span class="total-pro">{Math.round(solution.meal_protein_g)}g pro</span>
+					<span class="total-fib">{Math.round(solution.meal_fiber_g)}g fiber</span>
 				</div>
 				<div class="total-item">
 					<span class="total-label">Day</span>
-					<span class="total-cal">{Math.round(solution.meal_calories + smoothieCal)} kcal</span>
-					<span class="total-pro">{Math.round(solution.meal_protein + smoothiePro)}g pro</span>
-					<span class="total-fib">{Math.round(solution.meal_fiber + smoothieFiber)}g fiber</span>
+					<span class="total-cal">{Math.round(solution.meal_calories_kcal + smoothieCal)} kcal</span>
+					<span class="total-pro">{Math.round(solution.meal_protein_g + smoothiePro)}g pro</span>
+					<span class="total-fib">{Math.round(solution.meal_fiber_g + smoothieFiber)}g fiber</span>
 				</div>
 				{#if macroPcts}
 					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
