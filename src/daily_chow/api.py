@@ -15,7 +15,7 @@ from daily_chow.dri import (
     Sex,
 )
 from daily_chow.food_db import load_foods
-from daily_chow.solver import DEFAULT_PRIORITIES, IngredientInput, Targets, solve
+from daily_chow.solver import DEFAULT_PRIORITIES, IngredientInput, MacroRatio, Targets, solve
 
 app = FastAPI(title="Daily Chow API")
 
@@ -43,6 +43,12 @@ class TargetsRequest(BaseModel):
     cal_tolerance: int = 50
 
 
+class MacroRatioRequest(BaseModel):
+    carb_pct: int = 50
+    protein_pct: int = 25
+    fat_pct: int = 25
+
+
 class SolveRequest(BaseModel):
     ingredients: list[IngredientRequest]
     targets: TargetsRequest = TargetsRequest()
@@ -51,6 +57,7 @@ class SolveRequest(BaseModel):
     age_group: str = "19-30"
     optimize_nutrients: list[str] = []
     pinned_micros: dict[str, float] = {}
+    macro_ratio: MacroRatioRequest | None = None
 
 
 class SolvedIngredientResponse(BaseModel):
@@ -168,9 +175,18 @@ def post_solve(req: SolveRequest) -> SolveResponse:
             if remaining_ul > 0:
                 micro_uls[k] = remaining_ul
 
+    macro_ratio = None
+    if req.macro_ratio is not None:
+        macro_ratio = MacroRatio(
+            carb_pct=req.macro_ratio.carb_pct,
+            protein_pct=req.macro_ratio.protein_pct,
+            fat_pct=req.macro_ratio.fat_pct,
+        )
+
     solution = solve(
         ingredient_inputs, targets,
         micro_targets=micro_targets, micro_uls=micro_uls,
+        macro_ratio=macro_ratio,
         priorities=req.priorities,
     )
 

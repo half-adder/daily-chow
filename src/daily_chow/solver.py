@@ -268,11 +268,15 @@ def solve(
             abs_diff = model.new_int_var(0, bound, f"macro_{name}_abs")
             model.add_abs_equality(abs_diff, diff_var)
 
-            # pct_dev / PCT_SCALE >= abs_diff / cal_denom
-            # => pct_dev * cal_denom >= abs_diff * PCT_SCALE
-            # cal_denom is a constant, so this stays linear.
+            # diff_expr = total_cal * (actual_pct - target_pct), so
+            # abs_diff = total_cal * |deviation_in_pp|.
+            # We want pct_dev in [0, PCT_SCALE] where PCT_SCALE = 100pp.
+            # pct_dev / PCT_SCALE >= |deviation_pp| / 100
+            #   = abs_diff / (total_cal * 100)
+            #   ≈ abs_diff / (cal_denom * 100)
+            # => pct_dev * cal_denom * 100 >= abs_diff * PCT_SCALE
             pct_dev = model.new_int_var(0, PCT_SCALE, f"macro_{name}_pctdev")
-            model.add(pct_dev * cal_denom >= abs_diff * PCT_SCALE)
+            model.add(pct_dev * cal_denom * 100 >= abs_diff * PCT_SCALE)
             macro_dev_vars.append(pct_dev)
 
         if macro_dev_vars:

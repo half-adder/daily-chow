@@ -5,6 +5,7 @@
 	import AddIngredientModal from '$lib/components/AddIngredientModal.svelte';
 	import PinnedMealModal from '$lib/components/PinnedMealModal.svelte';
 	import StackedBar from '$lib/components/StackedBar.svelte';
+	import MacroRatioBar from '$lib/components/MacroRatioBar.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
 
 	// ── Micronutrient display info ──────────────────────────────────
@@ -57,8 +58,10 @@
 	let dailyFiberMin = $state(40);
 	let pinnedMeals = $state<PinnedMeal[]>([]);
 	let calTol = $state(50);
-	let proTol = $state(5);
-	let priorities = $state<string[]>(['micros', 'total_weight']);
+	let carbPct = $state(50);
+	let proteinPct = $state(25);
+	let fatPct = $state(25);
+	let priorities = $state<string[]>(['micros', 'macro_ratio', 'total_weight']);
 	let theme = $state<'dark' | 'light'>('dark');
 
 	// Slider scale
@@ -281,7 +284,8 @@
 				ageGroup,
 				Array.from(optimizeNutrients),
 				priorities,
-				pinnedMicros
+				pinnedMicros,
+				{ carb_pct: carbPct, protein_pct: proteinPct, fat_pct: fatPct }
 			);
 		} catch {
 			solution = null;
@@ -300,7 +304,8 @@
 		const state = {
 			dailyCal, dailyPro, dailyFiberMin,
 			pinnedMeals, pinnedMealsOpen,
-			calTol, proTol, priorities, theme, ingredients,
+			calTol, carbPct, proteinPct, fatPct,
+			priorities, theme, ingredients,
 			sex, ageGroup,
 			optimizeNutrients: Array.from(optimizeNutrients),
 			microsOpen, sliderAbsMax
@@ -325,12 +330,20 @@
 			if (s.pinnedMeals) pinnedMeals = s.pinnedMeals;
 			if (s.pinnedMealsOpen !== undefined) pinnedMealsOpen = s.pinnedMealsOpen;
 			calTol = s.calTol ?? 50;
-			proTol = s.proTol ?? 5;
+			if (s.carbPct !== undefined) carbPct = s.carbPct;
+			if (s.proteinPct !== undefined) proteinPct = s.proteinPct;
+			if (s.fatPct !== undefined) fatPct = s.fatPct;
 			// Migrate from old objective/microStrategy to priorities
 			if (s.priorities && Array.isArray(s.priorities)) {
 				priorities = s.priorities;
+				// Backfill macro_ratio into old priority lists
+				if (!priorities.includes('macro_ratio')) {
+					const idx = priorities.indexOf('total_weight');
+					if (idx >= 0) priorities.splice(idx, 0, 'macro_ratio');
+					else priorities.push('macro_ratio');
+				}
 			} else {
-				priorities = ['micros', 'total_weight'];
+				priorities = ['micros', 'macro_ratio', 'total_weight'];
 			}
 			if (s.theme === 'light' || s.theme === 'dark') theme = s.theme;
 			if (s.ingredients) {
@@ -510,7 +523,7 @@
 				</div>
 			</div>
 			<div class="target-group">
-				<label>Protein</label>
+				<label>Protein ≥</label>
 				<div class="target-input-row">
 					<input type="number" bind:value={dailyPro} onchange={triggerSolve} />
 					<span class="unit">g</span>
@@ -529,13 +542,6 @@
 					<input type="number" bind:value={calTol} onchange={triggerSolve} />
 				</div>
 			</div>
-			<div class="target-group">
-				<label>Pro tol ±</label>
-				<div class="target-input-row">
-					<input type="number" bind:value={proTol} onchange={triggerSolve} />
-					<span class="unit">g</span>
-				</div>
-			</div>
 			<div class="target-group priority-group">
 				<label>Solve priorities</label>
 				<div class="priority-list">
@@ -544,7 +550,7 @@
 							<span class="priority-rank">{i + 1}.</span>
 							<button class="priority-btn" disabled={i === 0} onclick={() => { [priorities[i - 1], priorities[i]] = [priorities[i], priorities[i - 1]]; priorities = [...priorities]; triggerSolve(); }} title="Move up">&#9650;</button>
 							<button class="priority-btn" disabled={i === priorities.length - 1} onclick={() => { [priorities[i], priorities[i + 1]] = [priorities[i + 1], priorities[i]]; priorities = [...priorities]; triggerSolve(); }} title="Move down">&#9660;</button>
-							<span class="priority-label">{p === 'micros' ? 'Micronutrient coverage' : 'Minimize total weight'}</span>
+							<span class="priority-label">{p === 'micros' ? 'Micronutrient coverage' : p === 'macro_ratio' ? 'Macro ratio target' : 'Minimize total weight'}</span>
 						</div>
 					{/each}
 				</div>
@@ -579,6 +585,15 @@
 					<span class="unit">g</span>
 				</div>
 			</div>
+		</div>
+		<div class="ratio-target">
+			<label>Macro target</label>
+			<MacroRatioBar
+				{carbPct}
+				{proteinPct}
+				{fatPct}
+				onchange={(c, p, f) => { carbPct = c; proteinPct = p; fatPct = f; triggerSolve(); }}
+			/>
 		</div>
 	</section>
 
@@ -914,6 +929,20 @@
 		flex-wrap: wrap;
 		gap: 16px;
 		align-items: end;
+	}
+
+	.ratio-target {
+		padding: 8px 0 0;
+	}
+
+	.ratio-target label {
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 6px;
+		display: block;
 	}
 
 	.target-group {

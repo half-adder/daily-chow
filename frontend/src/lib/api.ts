@@ -25,6 +25,12 @@ export interface SolveTargets {
 	cal_tolerance: number;
 }
 
+export interface MacroRatio {
+	carb_pct: number;
+	protein_pct: number;
+	fat_pct: number;
+}
+
 export interface SolvedIngredient {
 	key: number; // FDC ID
 	grams: number;
@@ -75,12 +81,13 @@ export async function solve(
 	age_group: string,
 	optimize_nutrients: string[],
 	priorities: string[],
-	pinned_micros: Record<string, number> = {}
+	pinned_micros: Record<string, number> = {},
+	macro_ratio: MacroRatio | null = null
 ): Promise<SolveResponse> {
 	const res = await fetch('/api/solve', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ingredients, targets, sex, age_group, optimize_nutrients, priorities, pinned_micros })
+		body: JSON.stringify({ ingredients, targets, sex, age_group, optimize_nutrients, priorities, pinned_micros, macro_ratio })
 	});
 	return res.json();
 }
