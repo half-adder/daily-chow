@@ -655,6 +655,10 @@
 		</button>
 	</section>
 
+	</div><!-- /.left-column -->
+
+	<!-- ── Right Column: Macros + Micros ──────────────────────────── -->
+	<div class="right-column">
 	<section class="totals-section">
 		{#if solution}
 			<div class="totals-grid">
@@ -721,9 +725,6 @@
 		{/if}
 	</section>
 
-	</div><!-- /.left-column -->
-
-	<!-- ── Micronutrient Report ─────────────────────────────────── -->
 	{#if solution && solution.status !== 'infeasible' && solution.micros}
 		<section class="micros-section">
 			<div class="micros-header">
@@ -799,6 +800,7 @@
 			</div>
 		</section>
 	{/if}
+	</div><!-- /.right-column -->
 	</div><!-- /.main-columns -->
 </div>
 
@@ -1097,11 +1099,20 @@
 		min-width: 0;
 	}
 
+	.right-column {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		position: sticky;
+		top: 16px;
+		align-self: start;
+	}
+
 	@media (max-width: 1200px) {
 		.main-columns {
 			grid-template-columns: 1fr;
 		}
-		.micros-section {
+		.right-column {
 			position: static;
 		}
 	}
@@ -1215,8 +1226,6 @@
 		background: var(--bg-panel);
 		border: 1px solid var(--border);
 		border-radius: 12px;
-		position: sticky;
-		top: 16px;
 	}
 
 	.micros-header {
