@@ -17,11 +17,11 @@ _DATA_PATH = Path(__file__).parent / "data" / "foods.json"
 
 # Map USDA nutrient IDs to our macro field names
 _MACRO_USDA_IDS: dict[str, list[int]] = {
-    "cal": [2047, 1008],  # prefer Atwater General, fallback to Energy
-    "protein": [1003],
-    "fat": [1004],
-    "carbs": [1005],
-    "fiber": [1079],
+    "calories_kcal": [2047, 1008],  # prefer Atwater General, fallback to Energy
+    "protein_g": [1003],
+    "fat_g": [1004],
+    "carbs_g": [1005],
+    "fiber_g": [1079],
 }
 
 # Reverse map: usda_id -> canonical micro key
@@ -39,11 +39,11 @@ class Food:
     subtitle: str  # qualifier (raw, cooked, etc.)
     usda_description: str  # original USDA description
     category: str  # USDA food category
-    cal_per_100g: float
-    protein_per_100g: float
-    fat_per_100g: float
-    carbs_per_100g: float
-    fiber_per_100g: float
+    calories_kcal_per_100g: float
+    protein_g_per_100g: float
+    fat_g_per_100g: float
+    carbs_g_per_100g: float
+    fiber_g_per_100g: float
     micros: dict[str, float] = field(default_factory=dict)
 
 
@@ -76,11 +76,11 @@ def _build_food(entry: dict) -> Food:
         subtitle=entry.get("subtitle", ""),
         usda_description=entry.get("usda_description", entry["name"]),
         category=entry.get("category", ""),
-        cal_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["cal"]),
-        protein_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["protein"]),
-        fat_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["fat"]),
-        carbs_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["carbs"]),
-        fiber_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["fiber"]),
+        calories_kcal_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["calories_kcal"]),
+        protein_g_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["protein_g"]),
+        fat_g_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["fat_g"]),
+        carbs_g_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["carbs_g"]),
+        fiber_g_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["fiber_g"]),
         micros=_extract_micros(nutrients),
     )
 

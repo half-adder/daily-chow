@@ -40,9 +40,9 @@ class MicroStrategy(Enum):
 
 @dataclass(frozen=True, slots=True)
 class Targets:
-    meal_calories: int = 2780  # kcal (daily 3500 minus smoothie 720)
-    meal_protein: int = 130  # g (daily 160 minus smoothie 30)
-    meal_fiber_min: int = 26  # g (daily 40 minus smoothie 14)
+    meal_calories_kcal: int = 2780  # kcal (daily 3500 minus smoothie 720)
+    meal_protein_g: int = 130  # g (daily 160 minus smoothie 30)
+    meal_fiber_min_g: int = 26  # g (daily 40 minus smoothie 14)
     cal_tolerance: int = 50  # kcal
     protein_tolerance: int = 5  # g
 
@@ -59,22 +59,22 @@ class IngredientInput:
 class SolvedIngredient:
     key: int  # FDC ID
     grams: int
-    calories: float
-    protein: float
-    fat: float
-    carbs: float
-    fiber: float
+    calories_kcal: float
+    protein_g: float
+    fat_g: float
+    carbs_g: float
+    fiber_g: float
 
 
 @dataclass(frozen=True, slots=True)
 class Solution:
     status: str  # "optimal", "feasible", "infeasible"
     ingredients: list[SolvedIngredient]
-    meal_calories: float
-    meal_protein: float
-    meal_fat: float
-    meal_carbs: float
-    meal_fiber: float
+    meal_calories_kcal: float
+    meal_protein_g: float
+    meal_fat_g: float
+    meal_carbs_g: float
+    meal_fiber_g: float
     objective_value: float | None
     micro_totals: dict[str, float] = field(default_factory=dict)
 
@@ -114,11 +114,11 @@ def solve(
         return Solution(
             status="infeasible",
             ingredients=[],
-            meal_calories=0,
-            meal_protein=0,
-            meal_fat=0,
-            meal_carbs=0,
-            meal_fiber=0,
+            meal_calories_kcal=0,
+            meal_protein_g=0,
+            meal_fat_g=0,
+            meal_carbs_g=0,
+            meal_fiber_g=0,
             objective_value=None,
         )
 
@@ -130,9 +130,9 @@ def solve(
         gram_vars[ing.key] = model.new_int_var(ing.min_g, ing.max_g, str(ing.key))
 
     # ── Precompute scaled coefficients ────────────────────────────────
-    cal_coeffs = {ing.key: _scaled_coeff(ing.food.cal_per_100g) for ing in ingredients}
-    pro_coeffs = {ing.key: _scaled_coeff(ing.food.protein_per_100g) for ing in ingredients}
-    fib_coeffs = {ing.key: _scaled_coeff(ing.food.fiber_per_100g) for ing in ingredients}
+    cal_coeffs = {ing.key: _scaled_coeff(ing.food.calories_kcal_per_100g) for ing in ingredients}
+    pro_coeffs = {ing.key: _scaled_coeff(ing.food.protein_g_per_100g) for ing in ingredients}
+    fib_coeffs = {ing.key: _scaled_coeff(ing.food.fiber_g_per_100g) for ing in ingredients}
 
     # ── Linear expressions for totals (in scaled units) ───────────────
     total_cal = sum(cal_coeffs[ing.key] * gram_vars[ing.key] for ing in ingredients)
@@ -140,21 +140,21 @@ def solve(
     total_fib = sum(fib_coeffs[ing.key] * gram_vars[ing.key] for ing in ingredients)
 
     # ── Calorie constraint: |total - target| <= tolerance ─────────────
-    cal_target_scaled = targets.meal_calories * SCALE
+    cal_target_scaled = targets.meal_calories_kcal * SCALE
     cal_tol_scaled = targets.cal_tolerance * SCALE
 
     cal_dev = model.new_int_var(-cal_tol_scaled, cal_tol_scaled, "cal_dev")
     model.add(total_cal - cal_target_scaled == cal_dev)
 
     # ── Protein constraint: |total - target| <= tolerance ─────────────
-    pro_target_scaled = targets.meal_protein * SCALE
+    pro_target_scaled = targets.meal_protein_g * SCALE
     pro_tol_scaled = targets.protein_tolerance * SCALE
 
     pro_dev = model.new_int_var(-pro_tol_scaled, pro_tol_scaled, "pro_dev")
     model.add(total_pro - pro_target_scaled == pro_dev)
 
     # ── Fiber constraint: total >= minimum ────────────────────────────
-    fib_min_scaled = targets.meal_fiber_min * SCALE
+    fib_min_scaled = targets.meal_fiber_min_g * SCALE
     model.add(total_fib >= fib_min_scaled)
 
     # ── Micronutrient soft penalty ────────────────────────────────────
@@ -172,7 +172,7 @@ def solve(
                 continue
 
             # Per-gram coefficients for this nutrient
-            coeffs: dict[str, int] = {}
+            coeffs: dict[int, int] = {}
             for ing in ingredients:
                 c = _micro_coeff(ing.food.micros.get(key, 0.0))
                 if c > 0:
@@ -268,11 +268,11 @@ def solve(
         return Solution(
             status="infeasible",
             ingredients=[],
-            meal_calories=0,
-            meal_protein=0,
-            meal_fat=0,
-            meal_carbs=0,
-            meal_fiber=0,
+            meal_calories_kcal=0,
+            meal_protein_g=0,
+            meal_fat_g=0,
+            meal_carbs_g=0,
+            meal_fiber_g=0,
             objective_value=None,
         )
 
@@ -286,11 +286,11 @@ def solve(
 
     for ing in ingredients:
         grams = solver.value(gram_vars[ing.key])
-        cal = grams * ing.food.cal_per_100g / 100
-        pro = grams * ing.food.protein_per_100g / 100
-        fat = grams * ing.food.fat_per_100g / 100
-        carb = grams * ing.food.carbs_per_100g / 100
-        fib = grams * ing.food.fiber_per_100g / 100
+        cal = grams * ing.food.calories_kcal_per_100g / 100
+        pro = grams * ing.food.protein_g_per_100g / 100
+        fat = grams * ing.food.fat_g_per_100g / 100
+        carb = grams * ing.food.carbs_g_per_100g / 100
+        fib = grams * ing.food.fiber_g_per_100g / 100
         total_cal_real += cal
         total_pro_real += pro
         total_fat_real += fat
@@ -299,11 +299,11 @@ def solve(
         solved.append(SolvedIngredient(
             key=ing.key,
             grams=grams,
-            calories=round(cal, 1),
-            protein=round(pro, 1),
-            fat=round(fat, 1),
-            carbs=round(carb, 1),
-            fiber=round(fib, 1),
+            calories_kcal=round(cal, 1),
+            protein_g=round(pro, 1),
+            fat_g=round(fat, 1),
+            carbs_g=round(carb, 1),
+            fiber_g=round(fib, 1),
         ))
 
     # ── Compute micronutrient totals (all tracked nutrients) ──────────
@@ -321,11 +321,11 @@ def solve(
     return Solution(
         status=status_str,
         ingredients=solved,
-        meal_calories=round(total_cal_real, 1),
-        meal_protein=round(total_pro_real, 1),
-        meal_fat=round(total_fat_real, 1),
-        meal_carbs=round(total_carb_real, 1),
-        meal_fiber=round(total_fib_real, 1),
+        meal_calories_kcal=round(total_cal_real, 1),
+        meal_protein_g=round(total_pro_real, 1),
+        meal_fat_g=round(total_fat_real, 1),
+        meal_carbs_g=round(total_carb_real, 1),
+        meal_fiber_g=round(total_fib_real, 1),
         objective_value=solver.objective_value if solver.objective_value is not None else None,
         micro_totals=micro_totals,
     )

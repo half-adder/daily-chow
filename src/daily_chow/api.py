@@ -37,9 +37,9 @@ class IngredientRequest(BaseModel):
 
 
 class TargetsRequest(BaseModel):
-    meal_calories: int = 2780
-    meal_protein: int = 130
-    meal_fiber_min: int = 26
+    meal_calories_kcal: int = 2780
+    meal_protein_g: int = 130
+    meal_fiber_min_g: int = 26
     cal_tolerance: int = 50
     protein_tolerance: int = 5
 
@@ -57,11 +57,11 @@ class SolveRequest(BaseModel):
 class SolvedIngredientResponse(BaseModel):
     key: int  # FDC ID
     grams: int
-    calories: float
-    protein: float
-    fat: float
-    carbs: float
-    fiber: float
+    calories_kcal: float
+    protein_g: float
+    fat_g: float
+    carbs_g: float
+    fiber_g: float
 
 
 class MicroResult(BaseModel):
@@ -76,11 +76,11 @@ class MicroResult(BaseModel):
 class SolveResponse(BaseModel):
     status: str
     ingredients: list[SolvedIngredientResponse]
-    meal_calories: float
-    meal_protein: float
-    meal_fat: float
-    meal_carbs: float
-    meal_fiber: float
+    meal_calories_kcal: float
+    meal_protein_g: float
+    meal_fat_g: float
+    meal_carbs_g: float
+    meal_fiber_g: float
     micros: dict[str, MicroResult] = {}
 
 
@@ -89,11 +89,11 @@ class FoodResponse(BaseModel):
     name: str
     subtitle: str
     usda_description: str
-    cal_per_100g: float
-    protein_per_100g: float
-    fat_per_100g: float
-    carbs_per_100g: float
-    fiber_per_100g: float
+    calories_kcal_per_100g: float
+    protein_g_per_100g: float
+    fat_g_per_100g: float
+    carbs_g_per_100g: float
+    fiber_g_per_100g: float
     category: str
     micros: dict[str, float] = {}
 
@@ -110,11 +110,11 @@ def get_foods() -> dict[int, FoodResponse]:
             name=f.name,
             subtitle=f.subtitle,
             usda_description=f.usda_description,
-            cal_per_100g=f.cal_per_100g,
-            protein_per_100g=f.protein_per_100g,
-            fat_per_100g=f.fat_per_100g,
-            carbs_per_100g=f.carbs_per_100g,
-            fiber_per_100g=f.fiber_per_100g,
+            calories_kcal_per_100g=f.calories_kcal_per_100g,
+            protein_g_per_100g=f.protein_g_per_100g,
+            fat_g_per_100g=f.fat_g_per_100g,
+            carbs_g_per_100g=f.carbs_g_per_100g,
+            fiber_g_per_100g=f.fiber_g_per_100g,
             category=f.category,
             micros=f.micros,
         )
@@ -135,9 +135,9 @@ def post_solve(req: SolveRequest) -> SolveResponse:
         ingredient_inputs.append(IngredientInput(ing.key, food, min_g, max_g))
 
     targets = Targets(
-        meal_calories=req.targets.meal_calories,
-        meal_protein=req.targets.meal_protein,
-        meal_fiber_min=req.targets.meal_fiber_min,
+        meal_calories_kcal=req.targets.meal_calories_kcal,
+        meal_protein_g=req.targets.meal_protein_g,
+        meal_fiber_min_g=req.targets.meal_fiber_min_g,
         cal_tolerance=req.targets.cal_tolerance,
         protein_tolerance=req.targets.protein_tolerance,
     )
@@ -184,18 +184,18 @@ def post_solve(req: SolveRequest) -> SolveResponse:
             SolvedIngredientResponse(
                 key=si.key,
                 grams=si.grams,
-                calories=si.calories,
-                protein=si.protein,
-                fat=si.fat,
-                carbs=si.carbs,
-                fiber=si.fiber,
+                calories_kcal=si.calories_kcal,
+                protein_g=si.protein_g,
+                fat_g=si.fat_g,
+                carbs_g=si.carbs_g,
+                fiber_g=si.fiber_g,
             )
             for si in solution.ingredients
         ],
-        meal_calories=solution.meal_calories,
-        meal_protein=solution.meal_protein,
-        meal_fat=solution.meal_fat,
-        meal_carbs=solution.meal_carbs,
-        meal_fiber=solution.meal_fiber,
+        meal_calories_kcal=solution.meal_calories_kcal,
+        meal_protein_g=solution.meal_protein_g,
+        meal_fat_g=solution.meal_fat_g,
+        meal_carbs_g=solution.meal_carbs_g,
+        meal_fiber_g=solution.meal_fiber_g,
         micros=micros,
     )
