@@ -3,6 +3,7 @@
 	import { fetchFoods, solve, type Food, type SolveResponse, type SolvedIngredient, type MicroResult, type PinnedMeal } from '$lib/api';
 	import IngredientRow from '$lib/components/IngredientRow.svelte';
 	import AddIngredientModal from '$lib/components/AddIngredientModal.svelte';
+	import PinnedMealModal from '$lib/components/PinnedMealModal.svelte';
 	import StackedBar from '$lib/components/StackedBar.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
 
@@ -109,6 +110,9 @@
 	let solution = $state<SolveResponse | null>(null);
 	let showAddModal = $state(false);
 	let solving = $state(false);
+	let pinnedMealsOpen = $state(true);
+	let showPinnedModal = $state(false);
+	let editingPinnedMeal = $state<PinnedMeal | null>(null);
 
 	// Expand states
 	let expandedIngredient = $state<number | null>(null);
@@ -224,6 +228,36 @@
 		solveTimeout = setTimeout(doSolve, 30);
 	}
 
+	function addPinnedMeal(meal: PinnedMeal) {
+		pinnedMeals = [...pinnedMeals, meal];
+		showPinnedModal = false;
+		editingPinnedMeal = null;
+		triggerSolve();
+	}
+
+	function updatePinnedMeal(updated: PinnedMeal) {
+		pinnedMeals = pinnedMeals.map((m) => m.id === updated.id ? updated : m);
+		showPinnedModal = false;
+		editingPinnedMeal = null;
+		triggerSolve();
+	}
+
+	function removePinnedMeal(id: string) {
+		pinnedMeals = pinnedMeals.filter((m) => m.id !== id);
+		triggerSolve();
+	}
+
+	function exportPinnedMeal(meal: PinnedMeal) {
+		const data = { name: meal.name, nutrients: meal.nutrients };
+		const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `${meal.name.toLowerCase().replace(/\s+/g, '-')}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
 	async function doSolve() {
 		const enabled = ingredients.filter((i) => i.enabled);
 		if (enabled.length === 0) {
@@ -267,7 +301,7 @@
 	function saveState() {
 		const state = {
 			dailyCal, dailyPro, dailyFiberMin,
-			pinnedMeals,
+			pinnedMeals, pinnedMealsOpen,
 			calTol, proTol, objective, microStrategy, theme, ingredients,
 			sex, ageGroup,
 			optimizeNutrients: Array.from(optimizeNutrients),
@@ -291,6 +325,7 @@
 			dailyPro = s.dailyPro ?? 160;
 			dailyFiberMin = s.dailyFiberMin ?? 40;
 			if (s.pinnedMeals) pinnedMeals = s.pinnedMeals;
+			if (s.pinnedMealsOpen !== undefined) pinnedMealsOpen = s.pinnedMealsOpen;
 			calTol = s.calTol ?? 50;
 			proTol = s.proTol ?? 5;
 			objective = s.objective ?? 'minimize_oil';
@@ -515,6 +550,40 @@
 		</div>
 	</section>
 
+	<section class="pinned-section">
+		<div class="pinned-header">
+			<button class="pinned-toggle" onclick={() => { pinnedMealsOpen = !pinnedMealsOpen; }}>
+				<span class="pinned-arrow" class:open={pinnedMealsOpen}>▸</span>
+				Pinned Meals
+				{#if pinnedMeals.length > 0}
+					<span class="pinned-badge">{pinnedMeals.length}</span>
+				{/if}
+			</button>
+			<button class="add-pinned-btn" onclick={() => { editingPinnedMeal = null; showPinnedModal = true; }}>+ Add</button>
+		</div>
+		{#if pinnedMealsOpen}
+			{#if pinnedMeals.length === 0}
+				<div class="pinned-empty">No pinned meals. Add one to subtract from daily targets.</div>
+			{:else}
+				{#each pinnedMeals as meal (meal.id)}
+					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+					<div class="pinned-row" onclick={() => { editingPinnedMeal = meal; showPinnedModal = true; }}>
+						<span class="pinned-name">{meal.name}</span>
+						<span class="pinned-macros">
+							{meal.nutrients.calories_kcal ?? 0} kcal ·
+							{meal.nutrients.protein_g ?? 0}g pro ·
+							{meal.nutrients.fat_g ?? 0}g fat ·
+							{meal.nutrients.carbs_g ?? 0}g carb ·
+							{meal.nutrients.fiber_g ?? 0}g fib
+						</span>
+						<button class="pinned-export" onclick={(e) => { e.stopPropagation(); exportPinnedMeal(meal); }} title="Export JSON">↓</button>
+						<button class="pinned-remove" onclick={(e) => { e.stopPropagation(); removePinnedMeal(meal.id); }} title="Remove">×</button>
+					</div>
+				{/each}
+			{/if}
+		{/if}
+	</section>
+
 	<section class="ingredients-section">
 		<div class="ingredients-header">
 			<span></span>
@@ -694,6 +763,17 @@
 		microResults={solution?.micros ?? {}}
 		onselect={addIngredient}
 		onclose={() => (showAddModal = false)}
+	/>
+{/if}
+
+{#if showPinnedModal}
+	<PinnedMealModal
+		meal={editingPinnedMeal}
+		onsave={(meal) => {
+			if (editingPinnedMeal) updatePinnedMeal(meal);
+			else addPinnedMeal(meal);
+		}}
+		onclose={() => { showPinnedModal = false; editingPinnedMeal = null; }}
 	/>
 {/if}
 
@@ -1208,5 +1288,118 @@
 		background: var(--bg-track);
 		border-radius: 6px;
 		overflow: hidden;
+	}
+
+	/* ── Pinned Meals ────────────────────────────────── */
+
+	.pinned-section {
+		margin-bottom: 16px;
+	}
+
+	.pinned-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0 4px;
+	}
+
+	.pinned-toggle {
+		background: none;
+		border: none;
+		color: var(--text-primary);
+		font-size: 15px;
+		font-weight: 600;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 4px;
+	}
+
+	.pinned-arrow {
+		display: inline-block;
+		transition: transform 0.15s;
+		font-size: 12px;
+	}
+
+	.pinned-arrow.open {
+		transform: rotate(90deg);
+	}
+
+	.pinned-badge {
+		background: #3b82f6;
+		color: white;
+		font-size: 11px;
+		padding: 1px 7px;
+		border-radius: 10px;
+		font-weight: 600;
+	}
+
+	.add-pinned-btn {
+		background: none;
+		border: 1px solid var(--border-input);
+		color: var(--text-secondary);
+		padding: 4px 12px;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 13px;
+	}
+
+	.add-pinned-btn:hover {
+		border-color: #3b82f6;
+		color: #3b82f6;
+	}
+
+	.pinned-empty {
+		padding: 12px 16px;
+		color: var(--text-muted);
+		font-size: 13px;
+	}
+
+	.pinned-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 8px 16px;
+		cursor: pointer;
+		border-radius: 6px;
+	}
+
+	.pinned-row:hover {
+		background: var(--bg-hover);
+	}
+
+	.pinned-name {
+		font-weight: 500;
+		color: var(--text-primary);
+		min-width: 120px;
+	}
+
+	.pinned-macros {
+		flex: 1;
+		font-size: 13px;
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.pinned-export,
+	.pinned-remove {
+		background: none;
+		border: none;
+		color: var(--text-dim);
+		cursor: pointer;
+		padding: 2px 6px;
+		border-radius: 4px;
+		font-size: 16px;
+	}
+
+	.pinned-export:hover {
+		color: #3b82f6;
+		background: rgba(59, 130, 246, 0.1);
+	}
+
+	.pinned-remove:hover {
+		color: #ef4444;
+		background: rgba(239, 68, 68, 0.1);
 	}
 </style>
