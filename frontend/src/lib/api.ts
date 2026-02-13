@@ -20,10 +20,9 @@ export interface SolveIngredient {
 
 export interface SolveTargets {
 	meal_calories_kcal: number;
-	meal_protein_g: number;
+	meal_protein_min_g: number;
 	meal_fiber_min_g: number;
 	cal_tolerance: number;
-	protein_tolerance: number;
 }
 
 export interface SolvedIngredient {

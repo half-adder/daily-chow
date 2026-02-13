@@ -273,10 +273,9 @@
 				enabled.map((i) => ({ key: i.key, min_g: i.minG, max_g: i.maxG })),
 				{
 					meal_calories_kcal: mealCal,
-					meal_protein_g: mealPro,
+					meal_protein_min_g: mealPro,
 					meal_fiber_min_g: mealFiberMin,
-					cal_tolerance: calTol,
-					protein_tolerance: proTol
+					cal_tolerance: calTol
 				},
 				sex,
 				ageGroup,

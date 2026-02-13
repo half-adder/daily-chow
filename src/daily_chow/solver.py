@@ -22,26 +22,29 @@ SCALE = 100
 # Higher precision scale for micronutrients (values like 0.05 mg/100g).
 MICRO_SCALE = 10_000
 
-# Normalization base: weight per nutrient = MICRO_NORM // target_scaled.
-# Ensures 100% shortfall of any nutrient contributes ~MICRO_NORM to penalty.
-MICRO_NORM = 100_000_000
-
 # Percentage scale for minimax: 0 = 0.00%, 10_000 = 100.00%
 PCT_SCALE = 10_000
 
 # Priority constants for lexicographic objective ordering
 PRIORITY_MICROS = "micros"
+PRIORITY_MACRO_RATIO = "macro_ratio"
 PRIORITY_TOTAL_WEIGHT = "total_weight"
-DEFAULT_PRIORITIES = [PRIORITY_MICROS, PRIORITY_TOTAL_WEIGHT]
+DEFAULT_PRIORITIES = [PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT]
 
 
 @dataclass(frozen=True, slots=True)
 class Targets:
     meal_calories_kcal: int = 2780  # kcal (daily 3500 minus smoothie 720)
-    meal_protein_g: int = 130  # g (daily 160 minus smoothie 30)
+    meal_protein_min_g: int = 130  # g (daily 160 minus smoothie 30)
     meal_fiber_min_g: int = 26  # g (daily 40 minus smoothie 14)
     cal_tolerance: int = 50  # kcal
-    protein_tolerance: int = 5  # g
+
+
+@dataclass(frozen=True, slots=True)
+class MacroRatio:
+    carb_pct: int = 50
+    protein_pct: int = 25
+    fat_pct: int = 25
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +94,7 @@ def solve(
     targets: Targets = Targets(),
     micro_targets: dict[str, float] | None = None,
     micro_uls: dict[str, float] | None = None,
+    macro_ratio: MacroRatio | None = None,
     priorities: list[str] | None = None,
     solver_timeout_s: float = 5.0,
 ) -> Solution:
@@ -136,11 +140,15 @@ def solve(
     cal_coeffs = {ing.key: _scaled_coeff(ing.food.calories_kcal_per_100g) for ing in ingredients}
     pro_coeffs = {ing.key: _scaled_coeff(ing.food.protein_g_per_100g) for ing in ingredients}
     fib_coeffs = {ing.key: _scaled_coeff(ing.food.fiber_g_per_100g) for ing in ingredients}
+    fat_coeffs = {ing.key: _scaled_coeff(ing.food.fat_g_per_100g) for ing in ingredients}
+    carb_coeffs = {ing.key: _scaled_coeff(ing.food.carbs_g_per_100g) for ing in ingredients}
 
     # ── Linear expressions for totals (in scaled units) ───────────────
     total_cal = sum(cal_coeffs[ing.key] * gram_vars[ing.key] for ing in ingredients)
     total_pro = sum(pro_coeffs[ing.key] * gram_vars[ing.key] for ing in ingredients)
     total_fib = sum(fib_coeffs[ing.key] * gram_vars[ing.key] for ing in ingredients)
+    total_fat = sum(fat_coeffs[ing.key] * gram_vars[ing.key] for ing in ingredients)
+    total_carb = sum(carb_coeffs[ing.key] * gram_vars[ing.key] for ing in ingredients)
 
     # ── Calorie constraint: |total - target| <= tolerance ─────────────
     cal_target_scaled = targets.meal_calories_kcal * SCALE
@@ -149,12 +157,9 @@ def solve(
     cal_dev = model.new_int_var(-cal_tol_scaled, cal_tol_scaled, "cal_dev")
     model.add(total_cal - cal_target_scaled == cal_dev)
 
-    # ── Protein constraint: |total - target| <= tolerance ─────────────
-    pro_target_scaled = targets.meal_protein_g * SCALE
-    pro_tol_scaled = targets.protein_tolerance * SCALE
-
-    pro_dev = model.new_int_var(-pro_tol_scaled, pro_tol_scaled, "pro_dev")
-    model.add(total_pro - pro_target_scaled == pro_dev)
+    # ── Protein constraint: total >= minimum ─────────────────────────
+    pro_min_scaled = targets.meal_protein_min_g * SCALE
+    model.add(total_pro >= pro_min_scaled)
 
     # ── Fiber constraint: total >= minimum ────────────────────────────
     fib_min_scaled = targets.meal_fiber_min_g * SCALE
@@ -186,15 +191,14 @@ def solve(
 
     # ── Micronutrient minimax objective ────────────────────────────────
     # Minimax: minimize the worst percentage shortfall across all checked
-    # nutrients, with sum-of-shortfalls as a tiebreaker.
+    # nutrients, with sum-of-percentage-shortfalls as a tiebreaker.
     worst_pct_var: cp_model.IntVar | None = None
     max_worst_pct = 0
-    micro_penalty: cp_model.LinearExprT = 0
-    max_micro_penalty = 0
+    micro_pct_sum: cp_model.LinearExprT = 0
+    max_micro_pct_sum = 0
 
     if micro_targets:
         pct_short_vars: list[cp_model.IntVar] = []
-        shortfall_terms: list[cp_model.LinearExprT] = []
         for key, target_val in micro_targets.items():
             target_scaled = round(target_val * MICRO_SCALE)
             if target_scaled <= 0:
@@ -213,21 +217,69 @@ def solve(
             model.add(pct_short * target_scaled >= shortfall * PCT_SCALE)
             pct_short_vars.append(pct_short)
 
-            # Sum-of-shortfalls tiebreaker (same as before)
-            weight = max(1, MICRO_NORM // target_scaled)
-            shortfall_terms.append(shortfall * weight)
-            max_micro_penalty += target_scaled * weight
-
         if pct_short_vars:
             worst_pct_var = model.new_int_var(0, PCT_SCALE, "worst_pct")
             for ps in pct_short_vars:
                 model.add(worst_pct_var >= ps)
             max_worst_pct = PCT_SCALE
 
-        if shortfall_terms:
-            micro_penalty = shortfall_terms[0]
-            for term in shortfall_terms[1:]:
-                micro_penalty = micro_penalty + term
+            # Sum-of-percentage-shortfalls tiebreaker: compact range that
+            # fits in int64 even with many priority levels.
+            micro_pct_sum = pct_short_vars[0]
+            for ps in pct_short_vars[1:]:
+                micro_pct_sum = micro_pct_sum + ps
+            max_micro_pct_sum = len(pct_short_vars) * PCT_SCALE
+
+    # ── Macro ratio minimax objective ──────────────────────────────────
+    macro_worst_var: cp_model.IntVar | None = None
+    max_macro_worst = 0
+
+    if macro_ratio is not None:
+        carb_cal_expr = total_carb * 4
+        pro_cal_expr = total_pro * 4
+        fat_cal_expr = total_fat * 9
+        total_cal_expr = carb_cal_expr + pro_cal_expr + fat_cal_expr
+
+        max_cal = sum(
+            (ing.max_g * _scaled_coeff(ing.food.carbs_g_per_100g) * 4
+             + ing.max_g * _scaled_coeff(ing.food.protein_g_per_100g) * 4
+             + ing.max_g * _scaled_coeff(ing.food.fat_g_per_100g) * 9)
+            for ing in ingredients
+        )
+
+        # Use the calorie target as a constant denominator for percentage
+        # deviation.  Calories are tightly bounded by the band constraint,
+        # so this is an excellent approximation that keeps the model fully
+        # linear (avoiding add_multiplication_equality which can make the
+        # model infeasible when combined with other constraints).
+        cal_denom = targets.meal_calories_kcal * SCALE
+
+        macro_dev_vars: list[cp_model.IntVar] = []
+        for name, cal_expr, target_pct in [
+            ("carb", carb_cal_expr, macro_ratio.carb_pct),
+            ("pro", pro_cal_expr, macro_ratio.protein_pct),
+            ("fat", fat_cal_expr, macro_ratio.fat_pct),
+        ]:
+            diff_expr = cal_expr * 100 - total_cal_expr * target_pct
+            bound = max_cal * 100
+            diff_var = model.new_int_var(-bound, bound, f"macro_{name}_diff")
+            model.add(diff_var == diff_expr)
+
+            abs_diff = model.new_int_var(0, bound, f"macro_{name}_abs")
+            model.add_abs_equality(abs_diff, diff_var)
+
+            # pct_dev / PCT_SCALE >= abs_diff / cal_denom
+            # => pct_dev * cal_denom >= abs_diff * PCT_SCALE
+            # cal_denom is a constant, so this stays linear.
+            pct_dev = model.new_int_var(0, PCT_SCALE, f"macro_{name}_pctdev")
+            model.add(pct_dev * cal_denom >= abs_diff * PCT_SCALE)
+            macro_dev_vars.append(pct_dev)
+
+        if macro_dev_vars:
+            macro_worst_var = model.new_int_var(0, PCT_SCALE, "macro_worst")
+            for dv in macro_dev_vars:
+                model.add(macro_worst_var >= dv)
+            max_macro_worst = PCT_SCALE
 
     # ── Objective ─────────────────────────────────────────────────────
     # Lexicographic optimization via user-specified priority order.
@@ -242,8 +294,11 @@ def solve(
         if p == PRIORITY_MICROS:
             if worst_pct_var is not None and max_worst_pct > 0:
                 terms.append((worst_pct_var, max_worst_pct))
-            if max_micro_penalty > 0:
-                terms.append((micro_penalty, max_micro_penalty))
+            if max_micro_pct_sum > 0:
+                terms.append((micro_pct_sum, max_micro_pct_sum))
+        elif p == PRIORITY_MACRO_RATIO:
+            if macro_worst_var is not None and max_macro_worst > 0:
+                terms.append((macro_worst_var, max_macro_worst))
         elif p == PRIORITY_TOTAL_WEIGHT:
             terms.append((total_grams, max_total))
 

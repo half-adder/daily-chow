@@ -38,10 +38,9 @@ class IngredientRequest(BaseModel):
 
 class TargetsRequest(BaseModel):
     meal_calories_kcal: int = 2780
-    meal_protein_g: int = 130
+    meal_protein_min_g: int = 130
     meal_fiber_min_g: int = 26
     cal_tolerance: int = 50
-    protein_tolerance: int = 5
 
 
 class SolveRequest(BaseModel):
@@ -138,10 +137,9 @@ def post_solve(req: SolveRequest) -> SolveResponse:
 
     targets = Targets(
         meal_calories_kcal=req.targets.meal_calories_kcal,
-        meal_protein_g=req.targets.meal_protein_g,
+        meal_protein_min_g=req.targets.meal_protein_min_g,
         meal_fiber_min_g=req.targets.meal_fiber_min_g,
         cal_tolerance=req.targets.cal_tolerance,
-        protein_tolerance=req.targets.protein_tolerance,
     )
 
     # Build micro targets for checked nutrients

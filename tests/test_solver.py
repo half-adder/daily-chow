@@ -3,6 +3,8 @@
 from daily_chow.food_db import load_foods
 from daily_chow.solver import (
     IngredientInput,
+    MacroRatio,
+    PRIORITY_MACRO_RATIO,
     PRIORITY_MICROS,
     PRIORITY_TOTAL_WEIGHT,
     Solution,
@@ -65,11 +67,11 @@ class TestSolverConstraints:
         assert sol.status in ("optimal", "feasible")
         assert abs(sol.meal_calories_kcal - targets.meal_calories_kcal) <= targets.cal_tolerance + 1
 
-    def test_protein_within_tolerance(self):
+    def test_protein_meets_floor(self):
         targets = Targets()
         sol = solve(_default_ingredients(), targets)
         assert sol.status in ("optimal", "feasible")
-        assert abs(sol.meal_protein_g - targets.meal_protein_g) <= targets.protein_tolerance + 3
+        assert sol.meal_protein_g >= targets.meal_protein_min_g - 1
 
     def test_fiber_meets_minimum(self):
         targets = Targets()
@@ -171,5 +173,57 @@ class TestMicroOptimization:
             _default_ingredients(),
             micro_targets={"iron_mg": 4.0, "calcium_mg": 500.0},
             micro_uls={"iron_mg": 45.0, "calcium_mg": 2500.0},
+        )
+        assert sol.status in ("optimal", "feasible")
+
+
+class TestProteinFloor:
+    def test_protein_floor_met(self):
+        targets = Targets(meal_protein_min_g=130)
+        sol = solve(_default_ingredients(), targets)
+        assert sol.status in ("optimal", "feasible")
+        assert sol.meal_protein_g >= 130 - 1
+
+    def test_protein_can_exceed_floor(self):
+        targets = Targets(meal_protein_min_g=80)
+        sol = solve(_default_ingredients(), targets)
+        assert sol.status in ("optimal", "feasible")
+        assert sol.meal_protein_g >= 80 - 1
+
+
+class TestMacroRatioObjective:
+    def test_macro_ratio_feasible(self):
+        ratio = MacroRatio(carb_pct=50, protein_pct=25, fat_pct=25)
+        sol = solve(
+            _default_ingredients(),
+            macro_ratio=ratio,
+            priorities=[PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        assert sol.status in ("optimal", "feasible")
+
+    def test_macro_ratio_steers_solution(self):
+        high_fat = MacroRatio(carb_pct=30, protein_pct=20, fat_pct=50)
+        low_fat = MacroRatio(carb_pct=60, protein_pct=25, fat_pct=15)
+        sol_hf = solve(
+            _default_ingredients(),
+            macro_ratio=high_fat,
+            priorities=[PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        sol_lf = solve(
+            _default_ingredients(),
+            macro_ratio=low_fat,
+            priorities=[PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        assert sol_hf.status in ("optimal", "feasible")
+        assert sol_lf.status in ("optimal", "feasible")
+        assert sol_hf.meal_fat_g > sol_lf.meal_fat_g
+
+    def test_macro_ratio_priority_ordering(self):
+        ratio = MacroRatio(carb_pct=50, protein_pct=25, fat_pct=25)
+        sol = solve(
+            _default_ingredients(),
+            macro_ratio=ratio,
+            priorities=[PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+            micro_targets={"iron_mg": 4.9},
         )
         assert sol.status in ("optimal", "feasible")
