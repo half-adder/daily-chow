@@ -1,0 +1,30 @@
+{
+  "name": "Morning Smoothie",
+  "nutrients": {
+    "calories_kcal": 720,
+    "protein_g": 30,
+    "fat_g": 0,
+    "carbs_g": 0,
+    "fiber_g": 14,
+    "calcium_mg": 659,
+    "iron_mg": 3.1,
+    "magnesium_mg": 151.6,
+    "phosphorus_mg": 696.4,
+    "potassium_mg": 1160.7,
+    "zinc_mg": 3.4,
+    "copper_mg": 0.6,
+    "manganese_mg": 1.9,
+    "selenium_mcg": 40.9,
+    "vitamin_c_mg": 149.6,
+    "thiamin_mg": 0.4,
+    "riboflavin_mg": 1.0,
+    "niacin_mg": 3.3,
+    "vitamin_b6_mg": 0.4,
+    "folate_mcg": 97.7,
+    "vitamin_b12_mcg": 1.9,
+    "vitamin_a_mcg": 292,
+    "vitamin_d_mcg": 3.2,
+    "vitamin_e_mg": 2.4,
+    "vitamin_k_mcg": 46.3
+  }
+}
