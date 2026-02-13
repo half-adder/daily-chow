@@ -27,18 +27,28 @@
 	let displayMin = $derived(Math.max(absMin, Math.min(min, absMax)));
 	let displayMax = $derived(Math.max(absMin, Math.min(max, absMax)));
 
+	// When thumbs overlap, put the "escape" thumb on top:
+	// upper half → min on top (drag left to separate), lower half → max on top (drag right)
+	let minOnTop = $derived(displayMin >= displayMax && pct(displayMin) >= 50);
+
 	function handleMinInput(e: Event) {
-		const val = parseInt((e.target as HTMLInputElement).value);
+		const input = e.target as HTMLInputElement;
+		const val = parseInt(input.value);
 		if (!isNaN(val)) {
 			min = Math.min(val, max);
+			// Force DOM sync — browser ignores value overrides during drag when
+			// Svelte skips the update (value didn't change in state)
+			if (min !== val) input.value = String(min);
 			onchange?.(min, max);
 		}
 	}
 
 	function handleMaxInput(e: Event) {
-		const val = parseInt((e.target as HTMLInputElement).value);
+		const input = e.target as HTMLInputElement;
+		const val = parseInt(input.value);
 		if (!isNaN(val)) {
 			max = Math.max(val, min);
+			if (max !== val) input.value = String(max);
 			onchange?.(min, max);
 		}
 	}
@@ -64,6 +74,7 @@
 			value={displayMin}
 			oninput={handleMinInput}
 			class="thumb thumb-min"
+			class:thumb-behind={displayMin >= displayMax && !minOnTop}
 		/>
 		<input
 			type="range"
@@ -72,6 +83,7 @@
 			value={displayMax}
 			oninput={handleMaxInput}
 			class="thumb thumb-max"
+			class:thumb-behind={minOnTop}
 		/>
 	</div>
 </div>
@@ -154,5 +166,14 @@
 
 	.thumb:focus::-webkit-slider-thumb {
 		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+	}
+
+	/* When thumbs overlap, disable the "behind" thumb so clicks pass through */
+	.thumb-behind::-webkit-slider-thumb {
+		pointer-events: none !important;
+	}
+
+	.thumb-behind::-moz-range-thumb {
+		pointer-events: none !important;
 	}
 </style>
