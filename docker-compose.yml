@@ -1,5 +1,6 @@
 services:
   caddy:
+    image: ghcr.io/half-adder/daily-chow-caddy:latest
     build:
       context: .
       dockerfile: Dockerfile.caddy
@@ -18,6 +19,7 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: ghcr.io/half-adder/daily-chow-frontend:latest
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -28,6 +30,7 @@ services:
     restart: unless-stopped
 
   backend:
+    image: ghcr.io/half-adder/daily-chow-backend:latest
     build:
       context: .
       dockerfile: Dockerfile.backend
