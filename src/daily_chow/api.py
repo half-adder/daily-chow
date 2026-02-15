@@ -17,7 +17,7 @@ from daily_chow.dri import (
     Sex,
 )
 from daily_chow.food_db import load_foods
-from daily_chow.solver import DEFAULT_PRIORITIES, IngredientInput, MacroRatio, Targets, solve
+from daily_chow.solver import DEFAULT_PRIORITIES, IngredientInput, MacroConstraint, MacroRatio, Targets, solve
 
 app = FastAPI(title="Daily Chow API")
 
@@ -42,9 +42,10 @@ class IngredientRequest(BaseModel):
 
 class TargetsRequest(BaseModel):
     meal_calories_kcal: int = 2780
-    meal_protein_min_g: int = 130
-    meal_fiber_min_g: int = 26
     cal_tolerance: int = 50
+    # Backward compat — old clients may still send these
+    meal_protein_min_g: int | None = None
+    meal_fiber_min_g: int | None = None
 
 
 class MacroRatioRequest(BaseModel):
@@ -56,6 +57,13 @@ class MacroRatioRequest(BaseModel):
     pinned_fat_g: float = 0.0
 
 
+class MacroConstraintRequest(BaseModel):
+    nutrient: str = "protein"  # 'carbs', 'protein', 'fat', 'fiber'
+    mode: str = "none"         # 'gte', 'lte', 'eq', 'none'
+    grams: int = 0
+    hard: bool = True
+
+
 class SolveRequest(BaseModel):
     ingredients: list[IngredientRequest]
     targets: TargetsRequest = TargetsRequest()
@@ -65,6 +73,7 @@ class SolveRequest(BaseModel):
     optimize_nutrients: list[str] = []
     pinned_micros: dict[str, float] = {}
     macro_ratio: MacroRatioRequest | None = None
+    macro_constraints: list[MacroConstraintRequest] = []
 
 
 class SolvedIngredientResponse(BaseModel):
@@ -156,10 +165,27 @@ def post_solve(req: SolveRequest) -> SolveResponse:
 
     targets = Targets(
         meal_calories_kcal=req.targets.meal_calories_kcal,
-        meal_protein_min_g=req.targets.meal_protein_min_g,
-        meal_fiber_min_g=req.targets.meal_fiber_min_g,
         cal_tolerance=req.targets.cal_tolerance,
     )
+
+    # Build macro constraints
+    macro_constraints: list[MacroConstraint] = []
+    if req.macro_constraints:
+        macro_constraints = [
+            MacroConstraint(
+                nutrient=mc.nutrient,
+                mode=mc.mode,
+                grams=mc.grams,
+                hard=mc.hard,
+            )
+            for mc in req.macro_constraints
+        ]
+    elif req.targets.meal_protein_min_g is not None or req.targets.meal_fiber_min_g is not None:
+        # Backward compat: convert old protein/fiber fields
+        if req.targets.meal_protein_min_g is not None:
+            macro_constraints.append(MacroConstraint("protein", "gte", req.targets.meal_protein_min_g, hard=True))
+        if req.targets.meal_fiber_min_g is not None:
+            macro_constraints.append(MacroConstraint("fiber", "gte", req.targets.meal_fiber_min_g, hard=True))
 
     # Build micro targets for checked nutrients
     sex = Sex(req.sex)
@@ -203,6 +229,7 @@ def post_solve(req: SolveRequest) -> SolveResponse:
         micro_targets=micro_targets, micro_uls=micro_uls,
         macro_ratio=macro_ratio,
         priorities=req.priorities,
+        macro_constraints=macro_constraints or None,
     )
 
     # Build micro results for all 20 tracked nutrients
