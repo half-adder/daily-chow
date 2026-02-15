@@ -177,6 +177,18 @@ def solve(
         "fiber": total_fib,
     }
 
+    # Compute upper bound for any macro: sum of (max_g * scaled_coeff) over all
+    # ingredients.  Used to bound loose deviation variables.
+    macro_coeff_map = {
+        "carbs": carb_coeffs,
+        "protein": pro_coeffs,
+        "fat": fat_coeffs,
+        "fiber": fib_coeffs,
+    }
+
+    loose_dev_vars: list[cp_model.IntVar] = []
+    max_loose_dev = 0
+
     if macro_constraints:
         for mc in macro_constraints:
             if mc.mode == "none":
@@ -191,6 +203,44 @@ def solve(
                 elif mc.mode == "eq":
                     model.add(expr >= target_scaled)
                     model.add(expr <= target_scaled)
+            else:
+                # Soft / loose constraint: penalize deviation as an objective
+                coeffs_for_nutrient = macro_coeff_map[mc.nutrient]
+                max_possible = sum(
+                    ing.max_g * coeffs_for_nutrient[ing.key]
+                    for ing in ingredients
+                )
+                dev_bound = max(max_possible, target_scaled)
+                name = f"loose_{mc.nutrient}_{mc.mode}"
+                dev = model.new_int_var(0, dev_bound, name)
+
+                if mc.mode == "gte":
+                    # Penalize being below target: dev >= target - actual
+                    model.add(dev >= target_scaled - expr)
+                elif mc.mode == "lte":
+                    # Penalize being above target: dev >= actual - target
+                    model.add(dev >= expr - target_scaled)
+                elif mc.mode == "eq":
+                    # Penalize any deviation: dev >= |actual - target|
+                    diff_var = model.new_int_var(
+                        -dev_bound, dev_bound, f"{name}_diff"
+                    )
+                    model.add(diff_var == expr - target_scaled)
+                    model.add_abs_equality(dev, diff_var)
+
+                loose_dev_vars.append(dev)
+                if dev_bound > max_loose_dev:
+                    max_loose_dev = dev_bound
+
+    # Minimax over loose deviations
+    worst_loose_var: cp_model.IntVar | None = None
+    max_worst_loose = 0
+
+    if loose_dev_vars:
+        worst_loose_var = model.new_int_var(0, max_loose_dev, "worst_loose")
+        for dv in loose_dev_vars:
+            model.add(worst_loose_var >= dv)
+        max_worst_loose = max_loose_dev
 
     # ── UL hard constraints ──────────────────────────────────────────
     # Precompute per-nutrient total expressions (micro-scaled) for reuse
@@ -336,6 +386,8 @@ def solve(
         elif p == PRIORITY_MACRO_RATIO:
             if macro_worst_var is not None and max_macro_worst > 0:
                 terms.append((macro_worst_var, max_macro_worst))
+            if worst_loose_var is not None and max_worst_loose > 0:
+                terms.append((worst_loose_var, max_worst_loose))
         elif p == PRIORITY_TOTAL_WEIGHT:
             terms.append((total_grams, max_total))
 

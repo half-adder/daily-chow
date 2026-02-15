@@ -273,3 +273,66 @@ class TestMacroConstraints:
         """Solve still works with empty macro_constraints."""
         sol = solve(_default_ingredients())
         assert sol.status in ("optimal", "feasible")
+
+
+class TestLooseConstraints:
+    def test_loose_lte_prefers_lower(self):
+        """Loose <= should push protein below unconstrained baseline.
+
+        Unconstrained baseline is ~102g protein.  A loose lte target of 70g
+        should cause the solver to actively reduce protein even though the
+        hard version of that constraint is infeasible.
+        """
+        constraints_loose = [
+            MacroConstraint("protein", "lte", 70, hard=False),
+        ]
+        sol_loose = solve(
+            _default_ingredients(),
+            macro_constraints=constraints_loose,
+            priorities=[PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        sol_none = solve(
+            _default_ingredients(),
+            priorities=[PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        assert sol_loose.status in ("optimal", "feasible")
+        assert sol_none.status in ("optimal", "feasible")
+        # Loose cap must actively reduce protein vs unconstrained
+        assert sol_loose.meal_protein_g < sol_none.meal_protein_g - 1, (
+            f"Loose lte should reduce protein: got {sol_loose.meal_protein_g}g "
+            f"vs unconstrained {sol_none.meal_protein_g}g"
+        )
+
+    def test_loose_gte_prefers_higher(self):
+        """Loose >= should push fiber above unconstrained baseline.
+
+        Unconstrained baseline is ~50.8g fiber.  A loose gte target of 80g
+        should cause the solver to actively increase fiber.
+        """
+        constraints_loose = [
+            MacroConstraint("fiber", "gte", 80, hard=False),
+        ]
+        sol_loose = solve(
+            _default_ingredients(),
+            macro_constraints=constraints_loose,
+            priorities=[PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        sol_none = solve(
+            _default_ingredients(),
+            priorities=[PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        assert sol_loose.status in ("optimal", "feasible")
+        assert sol_none.status in ("optimal", "feasible")
+        # Loose floor must actively increase fiber vs unconstrained
+        assert sol_loose.meal_fiber_g > sol_none.meal_fiber_g + 1, (
+            f"Loose gte should increase fiber: got {sol_loose.meal_fiber_g}g "
+            f"vs unconstrained {sol_none.meal_fiber_g}g"
+        )
+
+    def test_loose_does_not_cause_infeasibility(self):
+        """Loose constraint with impossible value should still find a solution."""
+        constraints = [
+            MacroConstraint("protein", "lte", 1, hard=False),  # impossibly low
+        ]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
+        assert sol.status in ("optimal", "feasible")
