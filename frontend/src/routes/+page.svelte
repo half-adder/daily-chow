@@ -790,11 +790,11 @@
 												{#if earPct !== null || ulPct !== null}
 													{@const rangeLeft = earPct !== null ? Math.min(earPct / MICRO_BAR_MAX * 100, 100) : 0}
 													{@const rangeRight = ulPct !== null ? Math.min(ulPct / MICRO_BAR_MAX * 100, 100) : 100}
-													<div class="micro-bar-range" style="left: {rangeLeft}%; right: {100 - rangeRight}%; background: {zoneColor}"></div>
+													<div class="micro-bar-range" style="left: {rangeLeft}%; right: {100 - rangeRight}%; --bar-color: {zoneColor}"></div>
 												{/if}
 												<div
 													class="micro-bar-fill"
-													style="width: {barPct}%; background: {zoneColor}"
+													style="width: {barPct}%; --bar-color: {zoneColor}"
 												></div>
 												<div class="micro-bar-rdi-tick" style="left: 50%"></div>
 											</div>
@@ -1330,7 +1330,7 @@
 
 	.micro-row {
 		display: grid;
-		grid-template-columns: 20px 100px 1fr 40px 100px;
+		grid-template-columns: 20px 100px 1fr 50px 100px;
 		gap: 6px;
 		align-items: center;
 		padding: 4px 0;
@@ -1356,6 +1356,10 @@
 	.micro-name {
 		font-size: 13px;
 		color: var(--text-micro);
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.micro-bar-track {
@@ -1364,6 +1368,7 @@
 		overflow: visible;
 		position: relative;
 		background: var(--bg-track, #e2e8f0);
+		min-width: 0;
 	}
 
 	.micro-bar-range {
@@ -1372,6 +1377,7 @@
 		bottom: -4px;
 		border-radius: 0;
 		opacity: 0.15;
+		background: var(--bar-color) !important;
 	}
 
 	.micro-bar-fill {
@@ -1382,6 +1388,7 @@
 		position: relative;
 		z-index: 1;
 		overflow: hidden;
+		background: var(--bar-color) !important;
 	}
 
 	.micro-bar-rdi-tick {
@@ -1400,6 +1407,9 @@
 		font-weight: 600;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
 	}
 
 	.micro-amounts {
@@ -1407,6 +1417,10 @@
 		color: var(--text-muted);
 		font-variant-numeric: tabular-nums;
 		text-align: right;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	/* ── Clickable / Expandable ──────────────────────── */
