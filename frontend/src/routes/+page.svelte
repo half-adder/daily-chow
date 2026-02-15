@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { fetchFoods, solve, type Food, type SolveResponse, type SolvedIngredient, type MicroResult, type PinnedMeal } from '$lib/api';
+	import { fetchFoods, solve, type Food, type SolveResponse, type SolvedIngredient, type MicroResult, type PinnedMeal, type MacroConstraint } from '$lib/api';
 	import IngredientRow from '$lib/components/IngredientRow.svelte';
 	import AddIngredientModal from '$lib/components/AddIngredientModal.svelte';
 	import PinnedMealModal from '$lib/components/PinnedMealModal.svelte';
 	import StackedBar from '$lib/components/StackedBar.svelte';
 	import MacroRatioBar from '$lib/components/MacroRatioBar.svelte';
 	import WelcomeModal from '$lib/components/WelcomeModal.svelte';
+	import MacroConstraintWheel from '$lib/components/MacroConstraintWheel.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
 
 	// ── Micronutrient display info ──────────────────────────────────
@@ -55,8 +56,12 @@
 
 	// Targets
 	let dailyCal = $state(3500);
-	let dailyPro = $state(160);
-	let dailyFiberMin = $state(40);
+	let macroConstraints = $state<MacroConstraint[]>([
+		{ nutrient: 'carbs',   mode: 'none', grams: 0,   hard: true },
+		{ nutrient: 'protein', mode: 'gte',  grams: 160, hard: true },
+		{ nutrient: 'fat',     mode: 'none', grams: 0,   hard: true },
+		{ nutrient: 'fiber',   mode: 'gte',  grams: 40,  hard: true },
+	]);
 	let pinnedMeals = $state<PinnedMeal[]>([]);
 	let calTol = $state(50);
 	let carbPct = $state(50);
@@ -149,8 +154,14 @@
 	});
 
 	let mealCal = $derived(dailyCal - (pinnedTotals.calories_kcal ?? 0));
-	let mealPro = $derived(dailyPro - (pinnedTotals.protein_g ?? 0));
-	let mealFiberMin = $derived(dailyFiberMin - (pinnedTotals.fiber_g ?? 0));
+	let mealConstraints = $derived(macroConstraints.map(mc => {
+		if (mc.mode === 'none') return mc;
+		const pinnedKeyMap: Record<string, string> = {
+			carbs: 'carbs_g', protein: 'protein_g', fat: 'fat_g', fiber: 'fiber_g'
+		};
+		const pinned = pinnedTotals[pinnedKeyMap[mc.nutrient]] ?? 0;
+		return { ...mc, grams: Math.max(0, mc.grams - pinned) };
+	}));
 
 	let existingKeys = $derived(new Set<number>(ingredients.map((i) => i.key)));
 
@@ -252,8 +263,6 @@
 				enabled.map((i) => ({ key: i.key, min_g: i.minG, max_g: i.maxG })),
 				{
 					meal_calories_kcal: mealCal,
-					meal_protein_min_g: mealPro,
-					meal_fiber_min_g: mealFiberMin,
 					cal_tolerance: calTol
 				},
 				sex,
@@ -266,7 +275,8 @@
 					pinned_carb_g: pinnedTotals.carbs_g ?? 0,
 					pinned_protein_g: pinnedTotals.protein_g ?? 0,
 					pinned_fat_g: pinnedTotals.fat_g ?? 0
-				}
+				},
+				mealConstraints.filter(mc => mc.mode !== 'none')
 			);
 		} catch {
 			solution = null;
@@ -283,7 +293,7 @@
 
 	function saveState() {
 		const state = {
-			dailyCal, dailyPro, dailyFiberMin,
+			dailyCal, macroConstraints,
 			pinnedMeals, pinnedMealsOpen,
 			calTol, carbPct, proteinPct, fatPct,
 			priorities, theme, ingredients,
@@ -305,8 +315,19 @@
 				return;
 			}
 			dailyCal = s.dailyCal ?? 3500;
-			dailyPro = s.dailyPro ?? 160;
-			dailyFiberMin = s.dailyFiberMin ?? 40;
+			// Migration: old dailyPro/dailyFiberMin → macroConstraints
+			if (s.macroConstraints) {
+				macroConstraints = s.macroConstraints;
+			} else {
+				const pro = s.dailyPro ?? 160;
+				const fib = s.dailyFiberMin ?? 40;
+				macroConstraints = [
+					{ nutrient: 'carbs',   mode: 'none', grams: 0,   hard: true },
+					{ nutrient: 'protein', mode: 'gte',  grams: pro, hard: true },
+					{ nutrient: 'fat',     mode: 'none', grams: 0,   hard: true },
+					{ nutrient: 'fiber',   mode: 'gte',  grams: fib, hard: true },
+				];
+			}
 			if (s.pinnedMeals) pinnedMeals = s.pinnedMeals;
 			if (s.pinnedMealsOpen !== undefined) pinnedMealsOpen = s.pinnedMealsOpen;
 			calTol = s.calTol ?? 50;
@@ -506,20 +527,21 @@
 					<input type="number" bind:value={dailyCal} onchange={triggerSolve} />
 				</div>
 			</div>
-			<div class="target-group">
-				<label>Protein ≥</label>
-				<div class="target-input-row">
-					<input type="number" bind:value={dailyPro} onchange={triggerSolve} />
-					<span class="unit">g</span>
-				</div>
-			</div>
-			<div class="target-group">
-				<label>Fiber ≥</label>
-				<div class="target-input-row">
-					<input type="number" bind:value={dailyFiberMin} onchange={triggerSolve} />
-					<span class="unit">g</span>
-				</div>
-			</div>
+			{#each macroConstraints as mc, i}
+				<MacroConstraintWheel
+					label={mc.nutrient === 'carbs' ? 'Carbs' :
+					       mc.nutrient === 'protein' ? 'Protein' :
+					       mc.nutrient === 'fat' ? 'Fat' : 'Fiber'}
+					mode={mc.mode}
+					grams={mc.grams}
+					hard={mc.hard}
+					onchange={(mode, grams, hard) => {
+						macroConstraints[i] = { ...mc, mode: mode as MacroConstraint['mode'], grams, hard };
+						macroConstraints = [...macroConstraints];
+						triggerSolve();
+					}}
+				/>
+			{/each}
 			<div class="target-group">
 				<label>Cal tol ±</label>
 				<div class="target-input-row">
