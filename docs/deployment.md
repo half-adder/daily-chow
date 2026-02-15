@@ -26,6 +26,35 @@ Three Docker Compose services on a single VPS (co-located with Obsidian sync inf
 | **Firewall** | UFW: allow 22, 80, 443, 22000 (Syncthing) |
 | **Docker** | `iptables: false` in daemon.json (UFW bypass prevention), manual NAT masquerade for container outbound |
 | **SSH** | `<VPS_USER>@<VPS_IP>` (key-only, fail2ban active) or via Tailscale at `<TAILSCALE_IP>` |
+| **Registry** | `ghcr.io/half-adder/daily-chow-{backend,frontend,caddy}` |
+
+## CI/CD
+
+Push to `main` triggers automatic deployment via GitHub Actions:
+
+1. **Build** — Three images built in parallel on GitHub runners (~1-2 min)
+2. **Push** — Images pushed to `ghcr.io/half-adder/daily-chow-*`
+3. **Deploy** — SSH into VPS, `git pull`, `docker compose pull`, `docker compose up -d`
+4. **Health check** — `curl /api/health` to verify
+
+Workflow: `.github/workflows/deploy.yml`
+
+### GitHub Secrets
+
+| Secret | Value |
+|--------|-------|
+| `VPS_HOST` | `<VPS_IP>` |
+| `VPS_SSH_KEY` | Private key for `<VPS_USER>` (stored in 1Password: "Daily Chow - Deploy Key") |
+
+### VPS Docker Registry Auth
+
+The VPS is authenticated with `ghcr.io` via `~/.docker/config.json`. If auth expires, re-authenticate:
+
+```bash
+# From local machine (uses gh CLI token)
+ssh -i ~/.ssh/id_ed25519 <VPS_USER>@<VPS_IP> \
+  "docker login ghcr.io -u half-adder --password-stdin" <<< "$(gh auth token)"
+```
 
 ## VPS .env
 
@@ -37,20 +66,13 @@ ORIGIN=https://chow.seanjohnsen.com
 CLOUDFLARE_API_TOKEN=<from 1Password: "Cloudflare - DNS API Token">
 ```
 
-## Deploy
+## Manual Deploy
+
+If CI/CD is down or you need to deploy without pushing:
 
 ```bash
-# From local machine — rsync code and rebuild
-rsync -avz --exclude='.git' --exclude='node_modules' --exclude='.svelte-kit' \
-  --exclude='__pycache__' --exclude='.venv' --exclude='.worktrees' \
-  --exclude='docs' --exclude='.DS_Store' --exclude='*.png' \
-  -e "ssh -i ~/.ssh/id_ed25519" \
-  /Users/sean/code/daily-chow/.worktrees/web-deployment/ \
-  <VPS_USER>@<VPS_IP>:/opt/daily-chow/
-
-# On VPS — rebuild and restart
 ssh -i ~/.ssh/id_ed25519 <VPS_USER>@<VPS_IP> \
-  "cd /opt/daily-chow && docker compose up -d --build"
+  "cd /opt/daily-chow && git pull origin main && docker compose pull && docker compose up -d"
 ```
 
 ## Verify
@@ -73,16 +95,28 @@ iptables -A FORWARD -d 172.18.0.0/16 -j ACCEPT
 
 If containers lose internet after a `docker compose down && up` (new network ID), re-run the masquerade rule with the new bridge interface and `sudo netfilter-persistent save`.
 
+## Cloudflare DNS
+
+Managed via API using the DNS token from 1Password:
+
+```bash
+# Example: list records
+CF_TOKEN=$(op item get "Cloudflare - DNS API Token " --fields label=credential --reveal)
+curl -H "Authorization: Bearer $CF_TOKEN" \
+  "https://api.cloudflare.com/client/v4/zones/<CLOUDFLARE_ZONE_ID>/dns_records"
+```
+
 ## Files
 
 ```
-docker-compose.yml      # Service definitions
-Dockerfile.backend      # Python 3.13 + uv
-Dockerfile.frontend     # Multi-stage bun build → node runtime
-Dockerfile.caddy        # Custom Caddy with Cloudflare DNS plugin
-Caddyfile               # Reverse proxy config
-.dockerignore           # Build context exclusions
-.env.example            # Template for VPS .env
+docker-compose.yml                # Service definitions (image + build)
+Dockerfile.backend                # Python 3.13 + uv
+Dockerfile.frontend               # Multi-stage bun build → node runtime
+Dockerfile.caddy                  # Custom Caddy with Cloudflare DNS plugin
+Caddyfile                         # Reverse proxy config
+.dockerignore                     # Build context exclusions
+.env.example                      # Template for VPS .env
+.github/workflows/deploy.yml      # CI/CD pipeline
 ```
 
 ## Resource Usage
