@@ -6,6 +6,7 @@
 	import PinnedMealModal from '$lib/components/PinnedMealModal.svelte';
 	import StackedBar from '$lib/components/StackedBar.svelte';
 	import MacroRatioBar from '$lib/components/MacroRatioBar.svelte';
+	import WelcomeModal from '$lib/components/WelcomeModal.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
 
 	// ── Micronutrient display info ──────────────────────────────────
@@ -115,6 +116,7 @@
 	let pinnedMealsOpen = $state(true);
 	let showPinnedModal = $state(false);
 	let editingPinnedMeal = $state<PinnedMeal | null>(null);
+	let showWelcome = $state(false);
 
 	// Expand states
 	let expandedIngredient = $state<number | null>(null);
@@ -187,6 +189,11 @@
 	function toggleTheme() {
 		theme = theme === 'dark' ? 'light' : 'dark';
 		applyTheme(theme);
+		saveState();
+	}
+
+	function dismissWelcome() {
+		showWelcome = false;
 		saveState();
 	}
 
@@ -313,7 +320,7 @@
 			priorities, theme, ingredients,
 			sex, ageGroup,
 			optimizeNutrients: Array.from(optimizeNutrients),
-			microsOpen, sliderAbsMax
+			microsOpen, sliderAbsMax, hasSeenWelcome: true
 		};
 		localStorage.setItem('daily-chow', JSON.stringify(state));
 	}
@@ -492,10 +499,12 @@
 	// ── Init ─────────────────────────────────────────────────────────
 
 	onMount(async () => {
+		const hasState = localStorage.getItem('daily-chow');
 		foods = await fetchFoods();
 		loadState();
 		applyTheme(theme);
 		doSolve();
+		if (!hasState) showWelcome = true;
 	});
 </script>
 
@@ -503,8 +512,10 @@
 	<header>
 		<div class="header-row">
 			<h1>Daily Chow</h1>
-			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-			<div class="theme-switch" onclick={toggleTheme} title="Toggle light/dark mode">
+			<div class="header-controls">
+				<button class="help-btn" onclick={() => (showWelcome = true)} title="How to use">?</button>
+				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+				<div class="theme-switch" onclick={toggleTheme} title="Toggle light/dark mode">
 				<svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
 					<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
 				</svg>
@@ -514,6 +525,7 @@
 				<svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
 				</svg>
+			</div>
 			</div>
 		</div>
 		<p class="subtitle">Meal macro solver</p>
@@ -844,6 +856,10 @@
 	/>
 {/if}
 
+{#if showWelcome}
+	<WelcomeModal onclose={dismissWelcome} />
+{/if}
+
 <style>
 	:global(body) {
 		margin: 0;
@@ -873,6 +889,33 @@
 		font-size: 28px;
 		font-weight: 700;
 		letter-spacing: -0.02em;
+	}
+
+	.header-controls {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	.help-btn {
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		border: 1px solid var(--border);
+		background: none;
+		color: var(--text-muted);
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+	}
+
+	.help-btn:hover {
+		color: var(--text-primary);
+		border-color: var(--text-muted);
 	}
 
 	.theme-switch {
