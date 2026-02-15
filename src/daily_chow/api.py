@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,8 +59,8 @@ class MacroRatioRequest(BaseModel):
 
 
 class MacroConstraintRequest(BaseModel):
-    nutrient: str = "protein"  # 'carbs', 'protein', 'fat', 'fiber'
-    mode: str = "none"         # 'gte', 'lte', 'eq', 'none'
+    nutrient: Literal['carbs', 'protein', 'fat', 'fiber'] = "protein"
+    mode: Literal['gte', 'lte', 'eq', 'none'] = "none"
     grams: int = 0
     hard: bool = True
 

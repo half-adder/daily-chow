@@ -162,6 +162,8 @@
 		)
 	);
 
+	// Meal-level values: daily targets minus pinned meal contributions.
+	// The solver optimizes only the meal portion, so these are what it receives.
 	let mealCal = $derived(dailyCal - (pinnedTotals.calories_kcal ?? 0));
 	let mealConstraints = $derived(macroConstraints.map(mc => {
 		if (mc.mode === 'none') return mc;
@@ -257,6 +259,11 @@
 		URL.revokeObjectURL(url);
 	}
 
+	// Intentionally checks at the DAILY level (dailyCal + macroConstraints), not
+	// meal level. This catches true mathematical impossibilities — macro floors
+	// that can't fit in the calorie budget regardless of food composition.
+	// Composition-dependent infeasibilities (e.g. pinned meal uses most calories
+	// but contributes little protein) are correctly deferred to the solver.
 	function detectConflicts(): string | null {
 		const cal = dailyCal;
 		const hardConstraints = macroConstraints.filter(mc => mc.hard && mc.mode !== 'none' && mc.nutrient !== 'fiber');
@@ -283,6 +290,7 @@
 				status: 'infeasible', ingredients: [], meal_calories_kcal: 0, meal_protein_g: 0,
 				meal_fat_g: 0, meal_carbs_g: 0, meal_fiber_g: 0, micros: {}
 			};
+			conflictReason = null;
 			return;
 		}
 		// Pre-solve conflict detection
