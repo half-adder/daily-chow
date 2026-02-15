@@ -157,7 +157,7 @@
 	let ratioDisabled = $derived(
 		new Set(
 			macroConstraints
-				.filter(mc => mc.mode === 'eq' && mc.hard && mc.nutrient !== 'fiber')
+				.filter(mc => mc.mode !== 'none' && mc.nutrient !== 'fiber')
 				.map(mc => mc.nutrient)
 		)
 	);
