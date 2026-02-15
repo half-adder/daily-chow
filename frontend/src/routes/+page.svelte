@@ -586,7 +586,7 @@
 				<span class="cal-row-label">Calories</span>
 				<input class="cal-row-input" type="number" bind:value={dailyCal} onchange={triggerSolve} />
 				<span class="cal-row-symbol">±</span>
-				<input class="cal-row-input cal-row-input-sm" type="number" bind:value={calTol} onchange={triggerSolve} />
+				<input class="cal-row-input" type="number" bind:value={calTol} onchange={triggerSolve} />
 				<span class="cal-row-unit">kcal</span>
 			</div>
 			{#each macroConstraints as mc, i}
@@ -1026,7 +1026,7 @@
 	}
 
 	.cal-row-input {
-		width: 64px;
+		width: 52px;
 		background: var(--input-bg, #27272a);
 		color: var(--text, #e5e5e5);
 		border: 1px solid var(--border, #3f3f46);
@@ -1043,16 +1043,15 @@
 		margin: 0;
 	}
 
-	.cal-row-input-sm {
-		width: 42px;
-	}
-
 	.cal-row-symbol {
 		font-weight: 700;
 		font-size: 18px;
 		color: var(--text, #e5e5e5);
 		width: 24px;
-		text-align: center;
+		height: 52px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.cal-row-unit {
