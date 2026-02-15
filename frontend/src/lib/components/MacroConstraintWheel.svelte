@@ -12,7 +12,7 @@
 	let { label, mode, grams, hard, onchange }: Props = $props();
 
 	const MODES: readonly string[] = ['gte', 'lte', 'eq', 'none'];
-	const SYMBOLS: Record<string, string> = { gte: '\u2265', lte: '\u2264', eq: '=', none: '\u2014' };
+	const SYMBOLS: Record<string, string> = { gte: '\u2265', lte: '\u2264', eq: '=', none: '\u00b7' };
 
 	let animating = $state(false);
 	let trackEl = $state<HTMLDivElement | null>(null);
