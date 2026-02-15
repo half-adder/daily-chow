@@ -119,6 +119,7 @@
 	let solution = $state<SolveResponse | null>(null);
 	let showAddModal = $state(false);
 	let solving = $state(false);
+	let conflictReason = $state<string | null>(null);
 	let pinnedMealsOpen = $state(true);
 	let showPinnedModal = $state(false);
 	let editingPinnedMeal = $state<PinnedMeal | null>(null);
@@ -152,6 +153,14 @@
 		}
 		return micros;
 	});
+
+	let ratioDisabled = $derived(
+		new Set(
+			macroConstraints
+				.filter(mc => mc.mode === 'eq' && mc.hard && mc.nutrient !== 'fiber')
+				.map(mc => mc.nutrient)
+		)
+	);
 
 	let mealCal = $derived(dailyCal - (pinnedTotals.calories_kcal ?? 0));
 	let mealConstraints = $derived(macroConstraints.map(mc => {
@@ -248,6 +257,47 @@
 		URL.revokeObjectURL(url);
 	}
 
+	function detectConflicts(): string | null {
+		const cal = dailyCal;
+		const hardConstraints = macroConstraints.filter(mc => mc.hard && mc.mode !== 'none' && mc.nutrient !== 'fiber');
+
+		// Check: hard constraints vs calorie budget
+		let minCal = 0;
+		for (const mc of hardConstraints) {
+			const calPerG = mc.nutrient === 'fat' ? 9 : 4;
+			if (mc.mode === 'gte' || mc.mode === 'eq') {
+				minCal += mc.grams * calPerG;
+			}
+		}
+		if (minCal > cal + calTol) {
+			return `Hard macro floors require at least ${minCal} cal — daily target is ${cal} cal`;
+		}
+
+		// Check: each hard constraint vs its ratio target percentage
+		const ratioMap: Record<string, number> = { carbs: carbPct, protein: proteinPct, fat: fatPct };
+		for (const mc of hardConstraints) {
+			const targetPct = ratioMap[mc.nutrient];
+			if (targetPct === undefined) continue;
+			const calPerG = mc.nutrient === 'fat' ? 9 : 4;
+			const impliedPct = Math.round((mc.grams * calPerG) / cal * 100);
+
+			if (mc.mode === 'lte' && impliedPct < targetPct) {
+				const label = mc.nutrient.charAt(0).toUpperCase() + mc.nutrient.slice(1);
+				return `${label} capped at ${mc.grams}g can only reach ${impliedPct}% of ${cal} cal — ratio target requires ${targetPct}%`;
+			}
+			if (mc.mode === 'gte' && impliedPct > targetPct) {
+				const label = mc.nutrient.charAt(0).toUpperCase() + mc.nutrient.slice(1);
+				return `${label} floor of ${mc.grams}g forces at least ${impliedPct}% of ${cal} cal — ratio target is ${targetPct}%`;
+			}
+			if (mc.mode === 'eq' && Math.abs(impliedPct - targetPct) > 2) {
+				const label = mc.nutrient.charAt(0).toUpperCase() + mc.nutrient.slice(1);
+				return `${label} fixed at ${mc.grams}g (${impliedPct}% of ${cal} cal) — ratio target is ${targetPct}%`;
+			}
+		}
+
+		return null;
+	}
+
 	async function doSolve() {
 		const enabled = ingredients.filter((i) => i.enabled);
 		if (enabled.length === 0) {
@@ -257,6 +307,17 @@
 			};
 			return;
 		}
+		// Pre-solve conflict detection
+		const conflict = detectConflicts();
+		if (conflict) {
+			solution = {
+				status: 'infeasible', ingredients: [], meal_calories_kcal: 0, meal_protein_g: 0,
+				meal_fat_g: 0, meal_carbs_g: 0, meal_fiber_g: 0, micros: {}
+			};
+			conflictReason = conflict;
+			return;
+		}
+		conflictReason = null;
 		solving = true;
 		try {
 			solution = await solve(
@@ -598,6 +659,7 @@
 				{carbPct}
 				{proteinPct}
 				{fatPct}
+				disabledSegments={ratioDisabled}
 				onchange={(c, p, f) => { carbPct = c; proteinPct = p; fatPct = f; triggerSolve(); }}
 			/>
 		</div>
@@ -734,7 +796,11 @@
 				{/if}
 				<div class="total-status" class:feasible={solution.status !== 'infeasible'} class:infeasible={solution.status === 'infeasible'}>
 					{#if solution.status === 'infeasible'}
-						✗ INFEASIBLE — widen ranges or disable ingredients
+						{#if conflictReason}
+							✗ CONFLICT — {conflictReason}
+						{:else}
+							✗ INFEASIBLE — widen ranges or disable ingredients
+						{/if}
 					{:else}
 						✓ {solution.status.toUpperCase()}
 					{/if}
