@@ -1023,6 +1023,7 @@
 		color: var(--text-muted, #a3a3a3);
 		min-width: 52px;
 		font-weight: 500;
+		text-align: right;
 	}
 
 	.cal-row-input {
