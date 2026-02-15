@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+
 	interface Props {
 		label: string;
 		mode: 'gte' | 'lte' | 'eq' | 'none';
@@ -13,7 +15,7 @@
 	const SYMBOLS: Record<string, string> = { gte: '\u2265', lte: '\u2264', eq: '=', none: '\u2014' };
 
 	let animating = $state(false);
-	let noTransition = $state(false);
+	let trackEl = $state<HTMLDivElement | null>(null);
 
 	function currentIndex(): number {
 		return MODES.indexOf(mode);
@@ -27,18 +29,28 @@
 		return SYMBOLS[MODES[(currentIndex() + 1) % MODES.length]];
 	}
 
-	function cycleMode() {
-		if (animating) return;
+	async function cycleMode() {
+		if (animating || !trackEl) return;
 		animating = true;
-		setTimeout(() => {
-			const nextIdx = (currentIndex() + 1) % MODES.length;
-			noTransition = true;
-			animating = false;
-			onchange(MODES[nextIdx], grams, hard);
-			requestAnimationFrame(() => {
-				noTransition = false;
-			});
-		}, 200);
+
+		const nextIdx = (currentIndex() + 1) % MODES.length;
+
+		// Instantly position new items shifted down (no transition)
+		trackEl.style.transition = 'none';
+		trackEl.style.transform = 'translateY(20px)';
+
+		// Change mode — new items render
+		onchange(MODES[nextIdx], grams, hard);
+		await tick();
+
+		// Force reflow so browser registers the shifted position
+		trackEl.offsetHeight;
+
+		// Animate from shifted position to center
+		trackEl.style.transition = '';
+		trackEl.style.transform = '';
+
+		setTimeout(() => { animating = false; }, 200);
 	}
 
 	function toggleHard() {
@@ -58,7 +70,7 @@
 <div class="mc-row" class:disabled={mode === 'none'}>
 	<span class="mc-label">{label}</span>
 	<div class="wheel-container" onclick={cycleMode}>
-		<div class="wheel-track" class:animating class:no-transition={noTransition}>
+		<div class="wheel-track" bind:this={trackEl}>
 			<span class="wheel-item">{prevSymbol()}</span>
 			<span class="wheel-item">{SYMBOLS[mode]}</span>
 			<span class="wheel-item">{nextSymbol()}</span>
@@ -133,14 +145,6 @@
 		flex-direction: column;
 		align-items: center;
 		transition: transform 0.2s ease-out;
-	}
-
-	.wheel-track.animating {
-		transform: translateY(-20px);
-	}
-
-	.wheel-track.no-transition {
-		transition: none;
 	}
 
 	.wheel-item {
