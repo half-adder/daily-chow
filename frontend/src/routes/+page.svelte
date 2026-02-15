@@ -552,13 +552,13 @@
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<div class="theme-switch" onclick={toggleTheme} title="Toggle light/dark mode">
 				<svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+					<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
 				</svg>
 				<div class="switch-track" class:light={theme === 'light'}>
 					<div class="switch-thumb"></div>
 				</div>
 				<svg class="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+					<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
 				</svg>
 			</div>
 			</div>
@@ -1006,7 +1006,7 @@
 
 	.cal-row-label {
 		font-size: 12px;
-		color: var(--text-muted, #a3a3a3);
+		color: var(--text-muted);
 		min-width: 52px;
 		font-weight: 500;
 		text-align: right;
@@ -1014,9 +1014,9 @@
 
 	.cal-row-input {
 		width: 52px;
-		background: var(--input-bg, #27272a);
-		color: var(--text, #e5e5e5);
-		border: 1px solid var(--border, #3f3f46);
+		background: var(--bg-input);
+		color: var(--text-primary);
+		border: 1px solid var(--border-input);
 		border-radius: 4px;
 		padding: 2px 4px;
 		font-size: 13px;
@@ -1033,7 +1033,7 @@
 	.cal-row-symbol {
 		font-weight: 700;
 		font-size: 16px;
-		color: var(--text, #e5e5e5);
+		color: var(--text-primary);
 		width: 24px;
 		height: 60px;
 		display: flex;
@@ -1043,7 +1043,7 @@
 
 	.cal-row-unit {
 		font-size: 12px;
-		color: var(--text-muted, #a3a3a3);
+		color: var(--text-muted);
 	}
 
 	.ratio-target {

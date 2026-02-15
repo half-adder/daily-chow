@@ -120,7 +120,7 @@
 
 	.mc-label {
 		font-size: 12px;
-		color: var(--text-muted, #a3a3a3);
+		color: var(--text-muted);
 		min-width: 52px;
 		font-weight: 500;
 		text-align: right;
@@ -155,7 +155,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--text, #e5e5e5);
+		color: var(--text-primary);
 	}
 
 	.lock-icon {
@@ -182,9 +182,9 @@
 
 	.mc-input {
 		width: 52px;
-		background: var(--input-bg, #27272a);
-		color: var(--text, #e5e5e5);
-		border: 1px solid var(--border, #3f3f46);
+		background: var(--bg-input);
+		color: var(--text-primary);
+		border: 1px solid var(--border-input);
 		border-radius: 4px;
 		padding: 2px 4px;
 		font-size: 13px;
@@ -204,6 +204,6 @@
 
 	.mc-unit {
 		font-size: 12px;
-		color: var(--text-muted, #a3a3a3);
+		color: var(--text-muted);
 	}
 </style>
