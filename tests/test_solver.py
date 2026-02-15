@@ -336,3 +336,19 @@ class TestLooseConstraints:
         ]
         sol = solve(_default_ingredients(), macro_constraints=constraints)
         assert sol.status in ("optimal", "feasible")
+
+
+class TestRatioExclusion:
+    def test_hard_eq_excluded_from_ratio(self):
+        """Hard = macro should not participate in ratio optimization."""
+        constraints = [MacroConstraint("fat", "eq", 80, hard=True)]
+        ratio = MacroRatio(carb_pct=50, protein_pct=25, fat_pct=25)
+        sol = solve(
+            _default_ingredients(),
+            macro_ratio=ratio,
+            macro_constraints=constraints,
+            priorities=[PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        assert sol.status in ("optimal", "feasible")
+        # Fat should be ~80g regardless of ratio (integer rounding tolerance)
+        assert abs(sol.meal_fat_g - 80) <= 3

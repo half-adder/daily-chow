@@ -337,12 +337,24 @@ def solve(
         pinned_cal = pinned_carb_cal + pinned_pro_cal + pinned_fat_cal
         cal_denom = targets.meal_calories_kcal * SCALE + pinned_cal
 
+        # Exclude macros that have a hard = constraint from ratio
+        # optimization — the solver has zero freedom to adjust them.
+        ratio_excluded: set[str] = set()
+        if macro_constraints:
+            for mc in macro_constraints:
+                if mc.mode == "eq" and mc.hard:
+                    ratio_excluded.add(mc.nutrient)
+
+        _ratio_name_to_nutrient = {"carb": "carbs", "pro": "protein", "fat": "fat"}
+
         macro_dev_vars: list[cp_model.IntVar] = []
         for name, cal_expr, target_pct in [
             ("carb", day_carb_cal, macro_ratio.carb_pct),
             ("pro", day_pro_cal, macro_ratio.protein_pct),
             ("fat", day_fat_cal, macro_ratio.fat_pct),
         ]:
+            if _ratio_name_to_nutrient[name] in ratio_excluded:
+                continue
             diff_expr = cal_expr * 100 - day_total_cal * target_pct
             bound = max_cal * 100
             diff_var = model.new_int_var(-bound, bound, f"macro_{name}_diff")
