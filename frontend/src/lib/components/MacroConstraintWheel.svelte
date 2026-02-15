@@ -110,7 +110,7 @@
 
 	.wheel-container {
 		width: 24px;
-		height: 28px;
+		height: 52px;
 		overflow: hidden;
 		cursor: pointer;
 		display: flex;
@@ -118,6 +118,8 @@
 		justify-content: center;
 		position: relative;
 		user-select: none;
+		-webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%);
+		mask-image: linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%);
 	}
 
 	.wheel-track {
@@ -128,14 +130,11 @@
 	}
 
 	.wheel-track.animating {
-		transform: translateY(-28px);
+		transform: translateY(-20px);
 	}
 
 	.wheel-item {
-		font-size: 16px;
 		font-weight: 700;
-		line-height: 28px;
-		height: 28px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -143,12 +142,16 @@
 	}
 
 	.wheel-item.adjacent {
-		transform: scale(0.6);
-		opacity: 0.3;
+		font-size: 11px;
+		height: 18px;
+		line-height: 18px;
+		opacity: 0.35;
 	}
 
 	.wheel-item.active {
-		transform: scale(1);
+		font-size: 18px;
+		height: 22px;
+		line-height: 22px;
 		opacity: 1;
 	}
 
