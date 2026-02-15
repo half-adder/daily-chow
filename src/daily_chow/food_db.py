@@ -44,6 +44,7 @@ class Food:
     fat_g_per_100g: float
     carbs_g_per_100g: float
     fiber_g_per_100g: float
+    commonness: int = 3
     micros: dict[str, float] = field(default_factory=dict)
 
 
@@ -81,6 +82,7 @@ def _build_food(entry: dict) -> Food:
         fat_g_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["fat_g"]),
         carbs_g_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["carbs_g"]),
         fiber_g_per_100g=_extract_macro(nutrients, _MACRO_USDA_IDS["fiber_g"]),
+        commonness=entry.get("commonness", 3),
         micros=_extract_micros(nutrients),
     )
 

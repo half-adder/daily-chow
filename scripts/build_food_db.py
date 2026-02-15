@@ -5,7 +5,7 @@ extracts tracked nutrients, generates short names via Claude Code headless
 mode (claude -p --model haiku), and outputs a compact JSON file for the app.
 
 Usage:
-    uv run scripts/build_food_db.py [--skip-names]
+    uv run scripts/build_food_db.py [--skip-names] [--skip-commonness]
 
 Expects raw USDA JSON files in ~/Downloads/:
     - FoodData_Central_foundation_food_json_2025-12-18.json
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -25,6 +26,7 @@ FOUNDATION_PATH = DOWNLOADS / "FoodData_Central_foundation_food_json_2025-12-18.
 SR_LEGACY_PATH = DOWNLOADS / "FoodData_Central_sr_legacy_food_json_2018-04.json"
 OUTPUT = Path(__file__).resolve().parent.parent / "src" / "daily_chow" / "data" / "foods.json"
 NAME_CACHE_PATH = Path(__file__).resolve().parent.parent / "src" / "daily_chow" / "data" / "name_cache.json"
+COMMONNESS_CACHE_PATH = Path(__file__).resolve().parent.parent / "src" / "daily_chow" / "data" / "commonness_cache.json"
 
 # -- Nutrient IDs to keep --------------------------------------------------
 KEEP_NUTRIENT_IDS: set[int] = {
@@ -75,6 +77,7 @@ EXCLUDE_CATEGORIES: set[str] = {
     "Soups, Sauces, and Gravies",
     "Sweets",
     "American Indian/Alaska Native Foods",
+    "Spices and Herbs",
 }
 
 # Description substrings (lowercased) that indicate processed items within kept categories
@@ -94,6 +97,8 @@ EXCLUDE_DESCRIPTION_PATTERNS: list[str] = [
     "eggnog", "hot cocoa",
     # Other
     "milk, human", "sour dressing",
+    # Baking ingredients — not direct meal ingredients
+    "flour",
 ]
 
 
@@ -236,6 +241,35 @@ def _call_haiku(prompt: str) -> str:
     return result.stdout.strip()
 
 
+def _extract_json(text: str) -> str:
+    """Extract a JSON object or array from text that may contain surrounding prose."""
+    # Strip markdown code fences
+    text = re.sub(r"^```(?:json)?\s*\n?", "", text)
+    text = re.sub(r"\n?```\s*$", "", text)
+    text = text.strip()
+
+    # Try parsing as-is first
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    # Find the outermost { ... } or [ ... ]
+    for open_ch, close_ch in [("{", "}"), ("[", "]")]:
+        start = text.find(open_ch)
+        end = text.rfind(close_ch)
+        if start != -1 and end > start:
+            candidate = text[start : end + 1]
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                continue
+
+    return text
+
+
 def generate_names(foods: dict[int, dict], cache_path: Path, skip: bool = False) -> dict[str, dict[str, str]]:
     """Generate short names via Claude Haiku, with caching.
 
@@ -301,15 +335,9 @@ Input (fdc_id|description):
             processed += len(batch)
             continue
 
-        # Handle markdown code blocks
-        if response_text.startswith("```"):
-            response_text = response_text.split("\n", 1)[1]
-            if response_text.endswith("```"):
-                response_text = response_text[: -len("```")]
-            response_text = response_text.strip()
-
+        extracted = _extract_json(response_text)
         try:
-            results = json.loads(response_text)
+            results = json.loads(extracted)
             for item in results:
                 cache[str(item["fdc_id"])] = {
                     "name": item["name"],
@@ -333,22 +361,136 @@ Input (fdc_id|description):
     return cache
 
 
-def build_output(foods: dict[int, dict], names: dict[str, dict[str, str]]) -> list[dict]:
+def generate_commonness(foods: dict[int, dict], cache_path: Path, skip: bool = False) -> dict[str, int]:
+    """Generate commonness scores (1-5) via Claude Haiku, with caching.
+
+    Returns dict keyed by fdc_id (str) -> int score.
+    """
+    cache: dict[str, int] = {}
+    if cache_path.exists():
+        with open(cache_path) as f:
+            cache = json.load(f)
+        print(f"\n  Commonness cache: {len(cache)} entries loaded")
+
+    if skip:
+        for fdc_id in foods:
+            key = str(fdc_id)
+            if key not in cache:
+                cache[key] = 3
+        return cache
+
+    needs_scores: list[tuple[int, str]] = []
+    for fdc_id, food in foods.items():
+        if str(fdc_id) not in cache:
+            needs_scores.append((fdc_id, food["description"]))
+
+    if not needs_scores:
+        print("  All foods already have cached commonness scores")
+        return cache
+
+    print(f"  Generating commonness scores for {len(needs_scores)} foods via Haiku...")
+
+    batch_size = 5
+    processed = 0
+
+    for i in range(0, len(needs_scores), batch_size):
+        batch = needs_scores[i : i + batch_size]
+        lines = [f"{fdc_id}|{desc}" for fdc_id, desc in batch]
+        prompt_text = "\n".join(lines)
+
+        prompt = f"""Output ONLY a JSON object. No explanation, no markdown, no text before or after.
+
+Rate each food on how commonly a typical US grocery shopper would buy it (1-5).
+Score the SPECIFIC form described, not the base ingredient:
+5 = everyday staple in its common form (whole eggs, whole milk, raw chicken breast, white rice, fresh bananas)
+4 = common (salmon fillet, sweet potatoes, Greek yogurt, rolled oats)
+3 = moderately common (lamb, beets, mango, quinoa)
+2 = uncommon (rabbit, jicama, teff, duck, frozen pasteurized eggs)
+1 = specialty/obscure (dried egg powder, dehydrated onion flakes, game meats, canned frog legs)
+
+Key: frozen, canned, dried, dehydrated, powdered, freeze-dried, and other processed/preserved forms score LOWER than their fresh/whole counterparts. "Egg, whole, raw, frozen" is NOT the same as fresh eggs.
+Descriptions use USDA inverted format ("Cheese, cheddar" means cheddar cheese).
+
+Input (fdc_id|description):
+{prompt_text}
+
+Output a JSON object mapping each fdc_id to its integer score, nothing else: {{"fdc_id": score, ...}}"""
+
+        batch_num = i // batch_size + 1
+        total_batches = (len(needs_scores) + batch_size - 1) // batch_size
+        print(f"\n  --- Batch {batch_num}/{total_batches} ({len(batch)} foods) ---")
+
+        try:
+            response_text = _call_haiku(prompt)
+        except (RuntimeError, subprocess.TimeoutExpired) as e:
+            print(f"  HAIKU ERROR: {e}")
+            print(f"  Falling back to score 3 for {len(batch)} foods")
+            for fdc_id, _desc in batch:
+                if str(fdc_id) not in cache:
+                    cache[str(fdc_id)] = 3
+            processed += len(batch)
+            continue
+
+        print(f"  Raw response ({len(response_text)} chars):")
+        # Show first 500 chars of response for debugging
+        preview = response_text[:500]
+        if len(response_text) > 500:
+            preview += "..."
+        print(f"    {preview}")
+
+        extracted = _extract_json(response_text)
+        try:
+            results = json.loads(extracted)
+            # Build a lookup from batch for readable logging
+            batch_desc = {str(fdc_id): desc for fdc_id, desc in batch}
+            for fdc_id_str, score in results.items():
+                clamped = max(1, min(5, int(score)))
+                cache[fdc_id_str] = clamped
+                desc = batch_desc.get(fdc_id_str, "?")
+                print(f"    {fdc_id_str}: {clamped} — {desc}")
+            parsed_count = len(results)
+            if parsed_count < len(batch):
+                missing = [str(fid) for fid, _ in batch if str(fid) not in results]
+                print(f"  WARNING: Only got {parsed_count}/{len(batch)} scores, missing: {missing[:10]}")
+                for fdc_id, _desc in batch:
+                    if str(fdc_id) not in cache:
+                        cache[str(fdc_id)] = 3
+                        print(f"    {fdc_id}: 3 (fallback) — {_desc}")
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            print(f"  PARSE ERROR: {e}")
+            print(f"  Falling back to score 3 for {len(batch)} foods")
+            for fdc_id, _desc in batch:
+                if str(fdc_id) not in cache:
+                    cache[str(fdc_id)] = 3
+
+        processed += len(batch)
+        if processed % 500 == 0 or processed == len(needs_scores):
+            print(f"\n  === Progress: {processed}/{len(needs_scores)} done ===")
+
+        # Save cache after each batch (resume-friendly)
+        with open(cache_path, "w") as f:
+            json.dump(cache, f, indent=2)
+
+    return cache
+
+
+def build_output(foods: dict[int, dict], names: dict[str, dict[str, str]], commonness: dict[str, int] | None = None) -> list[dict]:
     """Build the final output list."""
     output: list[dict] = []
     for fdc_id, food in foods.items():
         key = str(fdc_id)
         name_entry = names.get(key, {"name": food["description"], "subtitle": ""})
-        output.append(
-            {
-                "fdc_id": fdc_id,
-                "name": name_entry["name"],
-                "subtitle": name_entry.get("subtitle", ""),
-                "usda_description": food["description"],
-                "category": food["category"],
-                "nutrients": food["nutrients"],
-            }
-        )
+        entry = {
+            "fdc_id": fdc_id,
+            "name": name_entry["name"],
+            "subtitle": name_entry.get("subtitle", ""),
+            "usda_description": food["description"],
+            "category": food["category"],
+            "nutrients": food["nutrients"],
+        }
+        if commonness is not None:
+            entry["commonness"] = commonness.get(key, 3)
+        output.append(entry)
 
     # Sort by name for stable output
     output.sort(key=lambda f: f["name"].lower())
@@ -358,6 +500,7 @@ def build_output(foods: dict[int, dict], names: dict[str, dict[str, str]]) -> li
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build food database from USDA data")
     parser.add_argument("--skip-names", action="store_true", help="Skip Haiku name generation (use raw descriptions)")
+    parser.add_argument("--skip-commonness", action="store_true", help="Skip Haiku commonness score generation (default to 3)")
     args = parser.parse_args()
 
     foundation = load_foundation(FOUNDATION_PATH)
@@ -365,8 +508,9 @@ def main() -> None:
     merged = merge_foods(foundation, sr_legacy)
 
     names = generate_names(merged, NAME_CACHE_PATH, skip=args.skip_names)
+    commonness = generate_commonness(merged, COMMONNESS_CACHE_PATH, skip=args.skip_commonness)
 
-    output = build_output(merged, names)
+    output = build_output(merged, names, commonness)
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT, "w") as f:

@@ -337,6 +337,41 @@ class TestLooseConstraints:
         sol = solve(_default_ingredients(), macro_constraints=constraints)
         assert sol.status in ("optimal", "feasible")
 
+    def test_loose_gte_with_micros_and_ratio(self):
+        """Loose >= protein with micros + macro_ratio must not overflow int64.
+
+        When all objective tiers are active (micros, macro_ratio with loose
+        deviations, total_weight), the lexicographic weights can overflow if
+        loose deviation bounds are in raw scaled units instead of normalized
+        [0, PCT_SCALE] range.  A hard constraint with the same value should
+        produce an equivalent result.
+        """
+        micro_targets = {
+            "iron_mg": 10.0, "calcium_mg": 800.0, "magnesium_mg": 300.0,
+            "zinc_mg": 8.0, "vitamin_c_mg": 60.0,
+        }
+        ratio = MacroRatio(carb_pct=50, protein_pct=25, fat_pct=25)
+
+        # Hard version should work
+        hard = [MacroConstraint("protein", "gte", 130, hard=True)]
+        sol_hard = solve(
+            _default_ingredients(),
+            micro_targets=micro_targets,
+            macro_ratio=ratio,
+            macro_constraints=hard,
+        )
+        assert sol_hard.status in ("optimal", "feasible")
+
+        # Loose version must also work (not infeasible due to overflow)
+        loose = [MacroConstraint("protein", "gte", 130, hard=False)]
+        sol_loose = solve(
+            _default_ingredients(),
+            micro_targets=micro_targets,
+            macro_ratio=ratio,
+            macro_constraints=loose,
+        )
+        assert sol_loose.status in ("optimal", "feasible")
+
 
 class TestRatioExclusion:
     def test_hard_eq_excluded_from_ratio(self):

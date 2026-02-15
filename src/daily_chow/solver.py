@@ -204,7 +204,9 @@ def solve(
                     model.add(expr >= target_scaled)
                     model.add(expr <= target_scaled)
             else:
-                # Soft / loose constraint: penalize deviation as an objective
+                # Soft / loose constraint: penalize deviation as an objective.
+                # Normalize to [0, PCT_SCALE] to prevent int64 overflow in
+                # the lexicographic weight calculation.
                 coeffs_for_nutrient = macro_coeff_map[mc.nutrient]
                 max_possible = sum(
                     ing.max_g * coeffs_for_nutrient[ing.key]
@@ -228,9 +230,19 @@ def solve(
                     model.add(diff_var == expr - target_scaled)
                     model.add_abs_equality(dev, diff_var)
 
-                loose_dev_vars.append(dev)
-                if dev_bound > max_loose_dev:
-                    max_loose_dev = dev_bound
+                # Normalize deviation to [0, PCT_SCALE].
+                # For gte: max deviation is target_scaled (when actual=0),
+                # so normalize by target for full-range sensitivity.
+                # For lte/eq: deviation can exceed target, so normalize by
+                # dev_bound to keep pct_dev within [0, PCT_SCALE].
+                norm_denom = target_scaled if mc.mode == "gte" else dev_bound
+                norm_denom = max(norm_denom, 1)  # guard against zero target
+                pct_dev = model.new_int_var(0, PCT_SCALE, f"{name}_pct")
+                model.add(pct_dev * norm_denom >= dev * PCT_SCALE)
+
+                loose_dev_vars.append(pct_dev)
+                if PCT_SCALE > max_loose_dev:
+                    max_loose_dev = PCT_SCALE
 
     # Minimax over loose deviations
     worst_loose_var: cp_model.IntVar | None = None
@@ -387,6 +399,27 @@ def solve(
     max_total = sum(ing.max_g for ing in ingredients)
     total_grams = sum(gram_vars[k] for k in gram_vars)
 
+    # Combine macro ratio and loose deviations into a single minimax
+    # variable to avoid adding extra terms to the lex weight chain (which
+    # can cause int64 overflow with many objective tiers).
+    combined_macro_var: cp_model.IntVar | None = None
+    max_combined_macro = 0
+
+    macro_pieces = []
+    if macro_worst_var is not None and max_macro_worst > 0:
+        macro_pieces.append((macro_worst_var, max_macro_worst))
+    if worst_loose_var is not None and max_worst_loose > 0:
+        macro_pieces.append((worst_loose_var, max_worst_loose))
+
+    if len(macro_pieces) == 1:
+        combined_macro_var = macro_pieces[0][0]
+        max_combined_macro = macro_pieces[0][1]
+    elif len(macro_pieces) > 1:
+        max_combined_macro = max(m for _, m in macro_pieces)
+        combined_macro_var = model.new_int_var(0, max_combined_macro, "combined_macro")
+        for var, _ in macro_pieces:
+            model.add(combined_macro_var >= var)
+
     # Build terms list in priority order
     terms: list[tuple[cp_model.LinearExprT, int]] = []
     for p in priorities:
@@ -396,10 +429,8 @@ def solve(
             if max_micro_pct_sum > 0:
                 terms.append((micro_pct_sum, max_micro_pct_sum))
         elif p == PRIORITY_MACRO_RATIO:
-            if macro_worst_var is not None and max_macro_worst > 0:
-                terms.append((macro_worst_var, max_macro_worst))
-            if worst_loose_var is not None and max_worst_loose > 0:
-                terms.append((worst_loose_var, max_worst_loose))
+            if combined_macro_var is not None and max_combined_macro > 0:
+                terms.append((combined_macro_var, max_combined_macro))
         elif p == PRIORITY_TOTAL_WEIGHT:
             terms.append((total_grams, max_total))
 
@@ -413,6 +444,13 @@ def solve(
     for i in range(len(terms) - 2, -1, -1):
         _, lower_max = terms[i + 1]
         weights[i] = lower_max * weights[i + 1] + 1
+
+    # Verify the weighted objective fits in int64 to prevent silent corruption
+    max_obj = sum(max_val * w for (_, max_val), w in zip(terms, weights))
+    assert max_obj < 2**62, (
+        f"Lexicographic objective would overflow int64: {max_obj} >= 2^62. "
+        f"Reduce ingredient count/max_g or number of micro targets."
+    )
 
     final_obj: cp_model.LinearExprT = 0
     for (expr, _), w in zip(terms, weights):

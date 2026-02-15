@@ -120,6 +120,7 @@ class FoodResponse(BaseModel):
     carbs_g_per_100g: float
     fiber_g_per_100g: float
     category: str
+    commonness: int = 3
     micros: dict[str, float] = {}
 
 
@@ -146,6 +147,7 @@ def get_foods() -> dict[int, FoodResponse]:
             carbs_g_per_100g=f.carbs_g_per_100g,
             fiber_g_per_100g=f.fiber_g_per_100g,
             category=f.category,
+            commonness=f.commonness,
             micros=f.micros,
         )
         for fdc_id, f in foods.items()

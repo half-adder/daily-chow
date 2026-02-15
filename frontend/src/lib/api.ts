@@ -9,6 +9,7 @@ export interface Food {
 	carbs_g_per_100g: number;
 	fiber_g_per_100g: number;
 	category: string;
+	commonness: number;
 	micros: Record<string, number>;
 }
 

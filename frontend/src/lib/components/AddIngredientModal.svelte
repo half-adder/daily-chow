@@ -49,14 +49,23 @@
 					const aStarts = a.name.toLowerCase().startsWith(q) ? 0 : 1;
 					const bStarts = b.name.toLowerCase().startsWith(q) ? 0 : 1;
 					if (aStarts !== bStarts) return aStarts - bStarts;
+					const ac = a.commonness ?? 3;
+					const bc = b.commonness ?? 3;
+					if (ac !== bc) return bc - ac;
 					if (hasMicroData) {
 						return (gapScores.get(kb) ?? 0) - (gapScores.get(ka) ?? 0);
 					}
 					return 0;
 				});
-		} else if (hasMicroData) {
-			entries = entries.sort(([ka], [kb]) => {
-				return (gapScores.get(kb) ?? 0) - (gapScores.get(ka) ?? 0);
+		} else {
+			entries = entries.sort(([ka, a], [kb, b]) => {
+				const ac = a.commonness ?? 3;
+				const bc = b.commonness ?? 3;
+				if (ac !== bc) return bc - ac;
+				if (hasMicroData) {
+					return (gapScores.get(kb) ?? 0) - (gapScores.get(ka) ?? 0);
+				}
+				return 0;
 			});
 		}
 
