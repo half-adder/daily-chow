@@ -3,6 +3,7 @@
 from daily_chow.food_db import load_foods
 from daily_chow.solver import (
     IngredientInput,
+    MacroConstraint,
     MacroRatio,
     PRIORITY_MACRO_RATIO,
     PRIORITY_MICROS,
@@ -68,16 +69,16 @@ class TestSolverConstraints:
         assert abs(sol.meal_calories_kcal - targets.meal_calories_kcal) <= targets.cal_tolerance + 1
 
     def test_protein_meets_floor(self):
-        targets = Targets()
-        sol = solve(_default_ingredients(), targets)
+        constraints = [MacroConstraint("protein", "gte", 130, hard=True)]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
         assert sol.status in ("optimal", "feasible")
-        assert sol.meal_protein_g >= targets.meal_protein_min_g - 1
+        assert sol.meal_protein_g >= 130 - 1
 
     def test_fiber_meets_minimum(self):
-        targets = Targets()
-        sol = solve(_default_ingredients(), targets)
+        constraints = [MacroConstraint("fiber", "gte", 26, hard=True)]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
         assert sol.status in ("optimal", "feasible")
-        assert sol.meal_fiber_g >= targets.meal_fiber_min_g - 1
+        assert sol.meal_fiber_g >= 26 - 1
 
 
 class TestSolverObjectives:
@@ -179,14 +180,14 @@ class TestMicroOptimization:
 
 class TestProteinFloor:
     def test_protein_floor_met(self):
-        targets = Targets(meal_protein_min_g=130)
-        sol = solve(_default_ingredients(), targets)
+        constraints = [MacroConstraint("protein", "gte", 130, hard=True)]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
         assert sol.status in ("optimal", "feasible")
         assert sol.meal_protein_g >= 130 - 1
 
     def test_protein_can_exceed_floor(self):
-        targets = Targets(meal_protein_min_g=80)
-        sol = solve(_default_ingredients(), targets)
+        constraints = [MacroConstraint("protein", "gte", 80, hard=True)]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
         assert sol.status in ("optimal", "feasible")
         assert sol.meal_protein_g >= 80 - 1
 
@@ -226,4 +227,49 @@ class TestMacroRatioObjective:
             priorities=[PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
             micro_targets={"iron_mg": 4.9},
         )
+        assert sol.status in ("optimal", "feasible")
+
+
+class TestMacroConstraints:
+    def test_hard_gte_protein(self):
+        """Hard >= should enforce minimum protein."""
+        constraints = [MacroConstraint("protein", "gte", 130, hard=True)]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
+        assert sol.status in ("optimal", "feasible")
+        assert sol.meal_protein_g >= 130 - 1
+
+    def test_hard_lte_protein(self):
+        """Hard <= should cap protein."""
+        constraints = [
+            MacroConstraint("protein", "gte", 60, hard=True),
+            MacroConstraint("protein", "lte", 140, hard=True),
+        ]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
+        assert sol.status in ("optimal", "feasible")
+        assert sol.meal_protein_g <= 140 + 1
+
+    def test_hard_eq_fat(self):
+        """Hard = should fix fat within +/-2g (integer rounding tolerance)."""
+        constraints = [MacroConstraint("fat", "eq", 80, hard=True)]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
+        assert sol.status in ("optimal", "feasible")
+        assert abs(sol.meal_fat_g - 80) <= 2
+
+    def test_hard_lte_fiber(self):
+        """Hard <= should cap fiber."""
+        # Ingredient minimums force ~30g fiber, so cap at 40g
+        constraints = [MacroConstraint("fiber", "lte", 40, hard=True)]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
+        assert sol.status in ("optimal", "feasible")
+        assert sol.meal_fiber_g <= 40 + 1
+
+    def test_none_mode_no_constraint(self):
+        """Mode 'none' should not add any constraint."""
+        constraints = [MacroConstraint("protein", "none", 0, hard=True)]
+        sol = solve(_default_ingredients(), macro_constraints=constraints)
+        assert sol.status in ("optimal", "feasible")
+
+    def test_backward_compat_no_constraints(self):
+        """Solve still works with empty macro_constraints."""
+        sol = solve(_default_ingredients())
         assert sol.status in ("optimal", "feasible")

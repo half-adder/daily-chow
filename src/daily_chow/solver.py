@@ -35,8 +35,6 @@ DEFAULT_PRIORITIES = [PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIG
 @dataclass(frozen=True, slots=True)
 class Targets:
     meal_calories_kcal: int = 2780  # kcal (daily 3500 minus smoothie 720)
-    meal_protein_min_g: int = 130  # g (daily 160 minus smoothie 30)
-    meal_fiber_min_g: int = 26  # g (daily 40 minus smoothie 14)
     cal_tolerance: int = 50  # kcal
 
 
@@ -50,6 +48,14 @@ class MacroRatio:
     pinned_carb_g: float = 0.0
     pinned_protein_g: float = 0.0
     pinned_fat_g: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class MacroConstraint:
+    nutrient: str   # 'carbs', 'protein', 'fat', 'fiber'
+    mode: str       # 'gte', 'lte', 'eq', 'none'
+    grams: int      # target gram value (ignored when mode='none')
+    hard: bool = True  # True = hard constraint, False = soft objective
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +108,7 @@ def solve(
     macro_ratio: MacroRatio | None = None,
     priorities: list[str] | None = None,
     solver_timeout_s: float = 5.0,
+    macro_constraints: list[MacroConstraint] | None = None,
 ) -> Solution:
     """Build and solve the CP-SAT model.
 
@@ -162,13 +169,28 @@ def solve(
     cal_dev = model.new_int_var(-cal_tol_scaled, cal_tol_scaled, "cal_dev")
     model.add(total_cal - cal_target_scaled == cal_dev)
 
-    # ── Protein constraint: total >= minimum ─────────────────────────
-    pro_min_scaled = targets.meal_protein_min_g * SCALE
-    model.add(total_pro >= pro_min_scaled)
+    # ── Macro constraints (protein, fat, carbs, fiber) ─────────────────
+    macro_exprs = {
+        "carbs": total_carb,
+        "protein": total_pro,
+        "fat": total_fat,
+        "fiber": total_fib,
+    }
 
-    # ── Fiber constraint: total >= minimum ────────────────────────────
-    fib_min_scaled = targets.meal_fiber_min_g * SCALE
-    model.add(total_fib >= fib_min_scaled)
+    if macro_constraints:
+        for mc in macro_constraints:
+            if mc.mode == "none":
+                continue
+            expr = macro_exprs[mc.nutrient]
+            target_scaled = mc.grams * SCALE
+            if mc.hard:
+                if mc.mode == "gte":
+                    model.add(expr >= target_scaled)
+                elif mc.mode == "lte":
+                    model.add(expr <= target_scaled)
+                elif mc.mode == "eq":
+                    model.add(expr >= target_scaled)
+                    model.add(expr <= target_scaled)
 
     # ── UL hard constraints ──────────────────────────────────────────
     # Precompute per-nutrient total expressions (micro-scaled) for reuse
