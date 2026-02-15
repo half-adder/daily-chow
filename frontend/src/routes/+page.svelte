@@ -83,9 +83,10 @@
 	let sex = $state('male');
 	let ageGroup = $state('19-30');
 
-	// Micronutrient optimization
-	let optimizeNutrients = $state<Set<string>>(new Set());
 	let microsOpen = $state(true);
+
+	// All micro keys (always optimized)
+	const ALL_MICRO_KEYS = MICRO_TIERS.flatMap(t => t.keys);
 
 	// Ingredients
 	interface IngredientEntry {
@@ -197,38 +198,6 @@
 		saveState();
 	}
 
-	// ── Micro checkbox helpers ───────────────────────────────────────
-
-	function toggleNutrient(key: string) {
-		const next = new Set(optimizeNutrients);
-		if (next.has(key)) next.delete(key);
-		else next.add(key);
-		optimizeNutrients = next;
-		triggerSolve();
-	}
-
-	function groupState(keys: string[]): 'all' | 'none' | 'some' {
-		let checked = 0;
-		for (const k of keys) {
-			if (optimizeNutrients.has(k)) checked++;
-		}
-		if (checked === 0) return 'none';
-		if (checked === keys.length) return 'all';
-		return 'some';
-	}
-
-	function toggleGroup(keys: string[]) {
-		const state = groupState(keys);
-		const next = new Set(optimizeNutrients);
-		if (state === 'all') {
-			for (const k of keys) next.delete(k);
-		} else {
-			for (const k of keys) next.add(k);
-		}
-		optimizeNutrients = next;
-		triggerSolve();
-	}
-
 	// ── Solver ───────────────────────────────────────────────────────
 
 	let solveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -289,7 +258,7 @@
 				},
 				sex,
 				ageGroup,
-				Array.from(optimizeNutrients),
+				ALL_MICRO_KEYS,
 				priorities,
 				pinnedMicros,
 				{
@@ -319,7 +288,6 @@
 			calTol, carbPct, proteinPct, fatPct,
 			priorities, theme, ingredients,
 			sex, ageGroup,
-			optimizeNutrients: Array.from(optimizeNutrients),
 			microsOpen, sliderAbsMax, hasSeenWelcome: true
 		};
 		localStorage.setItem('daily-chow', JSON.stringify(state));
@@ -371,7 +339,6 @@
 			}
 			sex = s.sex ?? 'male';
 			ageGroup = s.ageGroup ?? '19-30';
-			if (s.optimizeNutrients) optimizeNutrients = new Set(s.optimizeNutrients);
 			if (s.microsOpen !== undefined) microsOpen = s.microsOpen;
 			if (s.sliderAbsMax) sliderAbsMax = s.sliderAbsMax;
 		} catch { /* ignore corrupt state */ }
@@ -760,24 +727,14 @@
 		<section class="micros-section">
 			<div class="micros-header">
 				<span class="micros-title">Micronutrients</span>
-				{#if optimizeNutrients.size > 0}
-					<span class="micros-badge">{optimizeNutrients.size} optimized</span>
-				{/if}
 			</div>
 
 			<div class="micros-content">
 				{#each MICRO_TIERS as tier}
-					{@const gs = groupState(tier.keys)}
 					<div class="micro-group">
-						<label class="micro-group-header">
-							<input
-								type="checkbox"
-								checked={gs === 'all'}
-								indeterminate={gs === 'some'}
-								onchange={() => toggleGroup(tier.keys)}
-							/>
+						<div class="micro-group-header">
 							<span class="micro-group-name">{tier.name}</span>
-						</label>
+						</div>
 						<div class="micro-items">
 							{#each tier.keys as key}
 								{@const m = solution.micros[key]}
@@ -789,16 +746,9 @@
 									{@const zoneColor = pctColor(m.pct, earPct, ulPct)}
 									<div class="micro-row-wrapper">
 										<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-										<div class="micro-row" class:dimmed={!optimizeNutrients.has(key)}>
-											<input
-												type="checkbox"
-												checked={optimizeNutrients.has(key)}
-												onchange={() => toggleNutrient(key)}
-											/>
-											<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-											<span class="micro-name clickable" onclick={() => toggleNutrient(key)}>{info.name}</span>
-											<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-											<div class="micro-bar-track clickable" onclick={() => { expandedMicro = expandedMicro === key ? null : key; }}>
+										<div class="micro-row" onclick={() => { expandedMicro = expandedMicro === key ? null : key; }}>
+											<span class="micro-name">{info.name}</span>
+											<div class="micro-bar-track">
 												{#if earPct !== null || ulPct !== null}
 													{@const rangeLeft = earPct !== null ? Math.min(earPct / MICRO_BAR_MAX * 100, 100) : 0}
 													{@const rangeRight = ulPct !== null ? Math.min(ulPct / MICRO_BAR_MAX * 100, 100) : 100}
@@ -1318,16 +1268,6 @@
 		color: var(--text-primary);
 	}
 
-	.micros-badge {
-		font-size: 11px;
-		font-weight: 500;
-		color: #3b82f6;
-		background: var(--bg-badge);
-		padding: 2px 8px;
-		border-radius: 10px;
-		margin-left: auto;
-	}
-
 	.micros-content {
 		padding: 0 20px 16px;
 		display: flex;
@@ -1346,14 +1286,6 @@
 		align-items: center;
 		gap: 8px;
 		padding: 6px 0;
-		cursor: pointer;
-	}
-
-	.micro-group-header input[type='checkbox'] {
-		accent-color: #3b82f6;
-		width: 15px;
-		height: 15px;
-		cursor: pointer;
 	}
 
 	.micro-group-name {
@@ -1373,26 +1305,10 @@
 
 	.micro-row {
 		display: grid;
-		grid-template-columns: 20px 100px 1fr 50px 100px;
+		grid-template-columns: 100px 1fr 50px 100px;
 		gap: 6px;
 		align-items: center;
 		padding: 4px 0;
-		cursor: pointer;
-		transition: opacity 0.15s;
-	}
-
-	.micro-row.dimmed {
-		opacity: 0.45;
-	}
-
-	.micro-row:hover {
-		opacity: 1;
-	}
-
-	.micro-row input[type='checkbox'] {
-		accent-color: #3b82f6;
-		width: 14px;
-		height: 14px;
 		cursor: pointer;
 	}
 
