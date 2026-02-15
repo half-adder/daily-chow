@@ -273,28 +273,6 @@
 			return `Hard macro floors require at least ${minCal} cal — daily target is ${cal} cal`;
 		}
 
-		// Check: each hard constraint vs its ratio target percentage
-		const ratioMap: Record<string, number> = { carbs: carbPct, protein: proteinPct, fat: fatPct };
-		for (const mc of hardConstraints) {
-			const targetPct = ratioMap[mc.nutrient];
-			if (targetPct === undefined) continue;
-			const calPerG = mc.nutrient === 'fat' ? 9 : 4;
-			const impliedPct = Math.round((mc.grams * calPerG) / cal * 100);
-
-			if (mc.mode === 'lte' && impliedPct < targetPct) {
-				const label = mc.nutrient.charAt(0).toUpperCase() + mc.nutrient.slice(1);
-				return `${label} capped at ${mc.grams}g can only reach ${impliedPct}% of ${cal} cal — ratio target requires ${targetPct}%`;
-			}
-			if (mc.mode === 'gte' && impliedPct > targetPct) {
-				const label = mc.nutrient.charAt(0).toUpperCase() + mc.nutrient.slice(1);
-				return `${label} floor of ${mc.grams}g forces at least ${impliedPct}% of ${cal} cal — ratio target is ${targetPct}%`;
-			}
-			if (mc.mode === 'eq' && Math.abs(impliedPct - targetPct) > 2) {
-				const label = mc.nutrient.charAt(0).toUpperCase() + mc.nutrient.slice(1);
-				return `${label} fixed at ${mc.grams}g (${impliedPct}% of ${cal} cal) — ratio target is ${targetPct}%`;
-			}
-		}
-
 		return null;
 	}
 
