@@ -3,10 +3,11 @@
 		carbPct: number;
 		proteinPct: number;
 		fatPct: number;
+		disabledSegments?: Set<string>;
 		onchange: (carb: number, protein: number, fat: number) => void;
 	}
 
-	let { carbPct, proteinPct, fatPct, onchange }: Props = $props();
+	let { carbPct, proteinPct, fatPct, disabledSegments = new Set(), onchange }: Props = $props();
 
 	let barEl = $state<HTMLDivElement | null>(null);
 	let dragging = $state<'cp' | 'pf' | null>(null);
@@ -20,6 +21,8 @@
 	}
 
 	function startDrag(handle: 'cp' | 'pf', e: PointerEvent) {
+		if (handle === 'cp' && (disabledSegments.has('carbs') || disabledSegments.has('protein'))) return;
+		if (handle === 'pf' && (disabledSegments.has('protein') || disabledSegments.has('fat'))) return;
 		dragging = handle;
 		(e.target as HTMLElement).setPointerCapture(e.pointerId);
 		e.preventDefault();
@@ -50,6 +53,8 @@
 	}
 
 	function startEdit(segment: 'carb' | 'protein' | 'fat') {
+		const nutrientName = segment === 'carb' ? 'carbs' : segment;
+		if (disabledSegments.has(nutrientName)) return;
 		editingSegment = segment;
 		if (segment === 'carb') editValue = String(carbPct);
 		else if (segment === 'protein') editValue = String(proteinPct);
@@ -93,7 +98,7 @@
 	onpointermove={onPointerMove}
 	onpointerup={onPointerUp}
 >
-	<div class="ratio-segment carb" style="width: {carbPct}%">
+	<div class="ratio-segment carb" class:segment-disabled={disabledSegments.has('carbs')} style="width: {carbPct}%">
 		{#if editingSegment === 'carb'}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
@@ -115,7 +120,7 @@
 		<div class="grip-lines"><div></div><div></div></div>
 	</div>
 
-	<div class="ratio-segment protein" style="width: {proteinPct}%">
+	<div class="ratio-segment protein" class:segment-disabled={disabledSegments.has('protein')} style="width: {proteinPct}%">
 		{#if editingSegment === 'protein'}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
@@ -137,7 +142,7 @@
 		<div class="grip-lines"><div></div><div></div></div>
 	</div>
 
-	<div class="ratio-segment fat" style="width: {fatPct}%">
+	<div class="ratio-segment fat" class:segment-disabled={disabledSegments.has('fat')} style="width: {fatPct}%">
 		{#if editingSegment === 'fat'}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
@@ -176,6 +181,11 @@
 		min-width: 0;
 		transition: width 0.1s ease;
 		position: relative;
+	}
+
+	.ratio-segment.segment-disabled {
+		opacity: 0.35;
+		filter: grayscale(0.8);
 	}
 
 	.ratio-segment.carb {
