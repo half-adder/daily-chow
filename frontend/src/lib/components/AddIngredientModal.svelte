@@ -13,11 +13,30 @@
 	let { foods, existingKeys, microResults, onselect, onclose }: Props = $props();
 
 	let query = $state('');
+	let debouncedQuery = $state('');
+	let debounceTimer: ReturnType<typeof setTimeout>;
+
+	function onInput(e: Event) {
+		const value = (e.target as HTMLInputElement).value;
+		query = value;
+		clearTimeout(debounceTimer);
+		debounceTimer = setTimeout(() => { debouncedQuery = value; }, 120);
+	}
 
 	let hasMicroData = $derived(Object.keys(microResults).length > 0);
 
+	// Pre-compute gap scores once when microResults change, not inside sort
+	let gapScores = $derived.by(() => {
+		if (!hasMicroData) return new Map<string, number>();
+		const scores = new Map<string, number>();
+		for (const [key, food] of Object.entries(foods)) {
+			scores.set(key, computeGapScore(0, food, microResults));
+		}
+		return scores;
+	});
+
 	let results = $derived.by(() => {
-		const q = query.toLowerCase().trim();
+		const q = debouncedQuery.toLowerCase().trim();
 		let entries = Object.entries(foods).filter(([k]) => !existingKeys.has(Number(k)));
 
 		if (q) {
@@ -26,22 +45,22 @@
 					const searchable = `${food.name} ${food.subtitle} ${food.usda_description} ${food.category}`.toLowerCase();
 					return searchable.includes(q);
 				})
-				.sort(([, a], [, b]) => {
+				.sort(([ka, a], [kb, b]) => {
 					const aStarts = a.name.toLowerCase().startsWith(q) ? 0 : 1;
 					const bStarts = b.name.toLowerCase().startsWith(q) ? 0 : 1;
 					if (aStarts !== bStarts) return aStarts - bStarts;
 					if (hasMicroData) {
-						return computeGapScore(0, b, microResults) - computeGapScore(0, a, microResults);
+						return (gapScores.get(kb) ?? 0) - (gapScores.get(ka) ?? 0);
 					}
 					return 0;
 				});
 		} else if (hasMicroData) {
-			entries = entries.sort(([, a], [, b]) => {
-				return computeGapScore(0, b, microResults) - computeGapScore(0, a, microResults);
+			entries = entries.sort(([ka], [kb]) => {
+				return (gapScores.get(kb) ?? 0) - (gapScores.get(ka) ?? 0);
 			});
 		}
 
-		return entries.slice(0, 16);
+		return entries;
 	});
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -64,7 +83,8 @@
 			type="text"
 			class="search-input"
 			placeholder="Search foods..."
-			bind:value={query}
+			value={query}
+			oninput={onInput}
 			autofocus
 		/>
 
