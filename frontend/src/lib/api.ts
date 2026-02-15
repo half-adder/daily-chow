@@ -20,8 +20,6 @@ export interface SolveIngredient {
 
 export interface SolveTargets {
 	meal_calories_kcal: number;
-	meal_protein_min_g: number;
-	meal_fiber_min_g: number;
 	cal_tolerance: number;
 }
 
@@ -32,6 +30,13 @@ export interface MacroRatio {
 	pinned_carb_g: number;
 	pinned_protein_g: number;
 	pinned_fat_g: number;
+}
+
+export interface MacroConstraint {
+	nutrient: 'carbs' | 'protein' | 'fat' | 'fiber';
+	mode: 'gte' | 'lte' | 'eq' | 'none';
+	grams: number;
+	hard: boolean;
 }
 
 export interface SolvedIngredient {
@@ -85,12 +90,17 @@ export async function solve(
 	optimize_nutrients: string[],
 	priorities: string[],
 	pinned_micros: Record<string, number> = {},
-	macro_ratio: MacroRatio | null = null
+	macro_ratio: MacroRatio | null = null,
+	macro_constraints: MacroConstraint[] = []
 ): Promise<SolveResponse> {
 	const res = await fetch('/api/solve', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ ingredients, targets, sex, age_group, optimize_nutrients, priorities, pinned_micros, macro_ratio })
+		body: JSON.stringify({
+			ingredients, targets, sex, age_group,
+			optimize_nutrients, priorities, pinned_micros,
+			macro_ratio, macro_constraints
+		})
 	});
 	return res.json();
 }
