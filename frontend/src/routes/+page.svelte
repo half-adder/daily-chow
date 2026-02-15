@@ -1046,10 +1046,10 @@
 
 	.cal-row-symbol {
 		font-weight: 700;
-		font-size: 18px;
+		font-size: 16px;
 		color: var(--text, #e5e5e5);
 		width: 24px;
-		height: 52px;
+		height: 60px;
 		display: flex;
 		align-items: center;
 		justify-content: center;

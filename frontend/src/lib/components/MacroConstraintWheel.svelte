@@ -59,9 +59,9 @@
 	<span class="mc-label">{label}</span>
 	<div class="wheel-container" onclick={cycleMode}>
 		<div class="wheel-track" class:animating class:no-transition={noTransition}>
-			<span class="wheel-item adjacent">{prevSymbol()}</span>
-			<span class="wheel-item active">{SYMBOLS[mode]}</span>
-			<span class="wheel-item adjacent">{nextSymbol()}</span>
+			<span class="wheel-item">{prevSymbol()}</span>
+			<span class="wheel-item">{SYMBOLS[mode]}</span>
+			<span class="wheel-item">{nextSymbol()}</span>
 		</div>
 	</div>
 	<span
@@ -116,7 +116,7 @@
 
 	.wheel-container {
 		width: 24px;
-		height: 52px;
+		height: 60px;
 		overflow: hidden;
 		cursor: pointer;
 		display: flex;
@@ -145,24 +145,13 @@
 
 	.wheel-item {
 		font-weight: 700;
+		font-size: 16px;
+		height: 20px;
+		line-height: 20px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		color: var(--text, #e5e5e5);
-	}
-
-	.wheel-item.adjacent {
-		font-size: 11px;
-		height: 18px;
-		line-height: 18px;
-		opacity: 0.35;
-	}
-
-	.wheel-item.active {
-		font-size: 18px;
-		height: 22px;
-		line-height: 22px;
-		opacity: 1;
 	}
 
 	.lock-icon {
