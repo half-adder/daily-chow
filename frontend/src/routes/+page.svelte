@@ -582,11 +582,12 @@
 
 	<section class="targets-section">
 		<div class="targets-row">
-			<div class="target-group">
-				<label>Daily cal</label>
-				<div class="target-input-row">
-					<input type="number" bind:value={dailyCal} onchange={triggerSolve} />
-				</div>
+			<div class="cal-row">
+				<span class="cal-row-label">Calories</span>
+				<input class="cal-row-input" type="number" bind:value={dailyCal} onchange={triggerSolve} />
+				<span class="cal-row-symbol">±</span>
+				<input class="cal-row-input cal-row-input-sm" type="number" bind:value={calTol} onchange={triggerSolve} />
+				<span class="cal-row-unit">kcal</span>
 			</div>
 			{#each macroConstraints as mc, i}
 				<MacroConstraintWheel
@@ -603,12 +604,6 @@
 					}}
 				/>
 			{/each}
-			<div class="target-group">
-				<label>Cal tol ±</label>
-				<div class="target-input-row">
-					<input type="number" bind:value={calTol} onchange={triggerSolve} />
-				</div>
-			</div>
 			<div class="target-group priority-group">
 				<label>Solve priorities</label>
 				<div class="priority-list">
@@ -1015,6 +1010,54 @@
 		flex-wrap: wrap;
 		gap: 16px;
 		align-items: end;
+	}
+
+	.cal-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.cal-row-label {
+		font-size: 12px;
+		color: var(--text-muted, #a3a3a3);
+		min-width: 52px;
+		font-weight: 500;
+	}
+
+	.cal-row-input {
+		width: 64px;
+		background: var(--input-bg, #27272a);
+		color: var(--text, #e5e5e5);
+		border: 1px solid var(--border, #3f3f46);
+		border-radius: 4px;
+		padding: 2px 4px;
+		font-size: 13px;
+		text-align: right;
+		-moz-appearance: textfield;
+	}
+
+	.cal-row-input::-webkit-outer-spin-button,
+	.cal-row-input::-webkit-inner-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+
+	.cal-row-input-sm {
+		width: 42px;
+	}
+
+	.cal-row-symbol {
+		font-weight: 700;
+		font-size: 18px;
+		color: var(--text, #e5e5e5);
+		width: 24px;
+		text-align: center;
+	}
+
+	.cal-row-unit {
+		font-size: 12px;
+		color: var(--text-muted, #a3a3a3);
 	}
 
 	.ratio-target {
