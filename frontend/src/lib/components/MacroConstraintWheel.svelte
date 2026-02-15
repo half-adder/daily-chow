@@ -13,6 +13,7 @@
 	const SYMBOLS: Record<string, string> = { gte: '\u2265', lte: '\u2264', eq: '=', none: '\u2014' };
 
 	let animating = $state(false);
+	let noTransition = $state(false);
 
 	function currentIndex(): number {
 		return MODES.indexOf(mode);
@@ -31,8 +32,12 @@
 		animating = true;
 		setTimeout(() => {
 			const nextIdx = (currentIndex() + 1) % MODES.length;
+			noTransition = true;
 			animating = false;
 			onchange(MODES[nextIdx], grams, hard);
+			requestAnimationFrame(() => {
+				noTransition = false;
+			});
 		}, 200);
 	}
 
@@ -53,7 +58,7 @@
 <div class="mc-row" class:disabled={mode === 'none'}>
 	<span class="mc-label">{label}</span>
 	<div class="wheel-container" onclick={cycleMode}>
-		<div class="wheel-track" class:animating>
+		<div class="wheel-track" class:animating class:no-transition={noTransition}>
 			<span class="wheel-item adjacent">{prevSymbol()}</span>
 			<span class="wheel-item active">{SYMBOLS[mode]}</span>
 			<span class="wheel-item adjacent">{nextSymbol()}</span>
@@ -132,6 +137,10 @@
 
 	.wheel-track.animating {
 		transform: translateY(-20px);
+	}
+
+	.wheel-track.no-transition {
+		transition: none;
 	}
 
 	.wheel-item {
