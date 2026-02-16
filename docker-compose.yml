@@ -16,6 +16,7 @@ services:
     depends_on:
       - frontend
       - backend
+      - umami
     restart: unless-stopped
 
   frontend:
@@ -38,6 +39,17 @@ services:
       - "8000"
     restart: unless-stopped
 
+  umami:
+    image: ghcr.io/umami-software/umami:sqlite-latest
+    expose:
+      - "3000"
+    volumes:
+      - umami-data:/app/umami-data
+    environment:
+      DATABASE_URL: file:/app/umami-data/umami.db
+    restart: unless-stopped
+
 volumes:
   caddy_data:
   caddy_config:
+  umami-data:

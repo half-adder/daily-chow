@@ -1,3 +1,11 @@
+analytics.seanjohnsen.com {
+	reverse_proxy umami:3000
+
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+}
+
 {$SITE_ADDRESS} {
 	handle /api/* {
 		uri strip_prefix /api
