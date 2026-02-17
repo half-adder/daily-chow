@@ -28,8 +28,9 @@ PCT_SCALE = 10_000
 # Priority constants for lexicographic objective ordering
 PRIORITY_MICROS = "micros"
 PRIORITY_MACRO_RATIO = "macro_ratio"
+PRIORITY_INGREDIENT_DIVERSITY = "ingredient_diversity"
 PRIORITY_TOTAL_WEIGHT = "total_weight"
-DEFAULT_PRIORITIES = [PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT]
+DEFAULT_PRIORITIES = [PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_INGREDIENT_DIVERSITY, PRIORITY_TOTAL_WEIGHT]
 
 
 @dataclass(frozen=True, slots=True)
@@ -420,6 +421,30 @@ def solve(
         for var, _ in macro_pieces:
             model.add(combined_macro_var >= var)
 
+    # ── Ingredient diversity (L2 regularization) ─────────────────────
+    # Minimize sum of squared grams to encourage even distribution.
+    # sum(gram_i^2) is minimized when grams are spread evenly.
+    # Only built when the priority is active to avoid adding unused
+    # multiplication constraints. Uses a smaller scale (100) than
+    # PCT_SCALE to keep the lexicographic weight chain within int64.
+    diversity_scale = 100
+    diversity_var: cp_model.IntVar | None = None
+    max_diversity = 0
+    if PRIORITY_INGREDIENT_DIVERSITY in priorities:
+        sum_sq: cp_model.LinearExprT = 0
+        max_sum_sq = 0
+        for ing in ingredients:
+            sq_var = model.new_int_var(0, ing.max_g ** 2, f"sq_{ing.key}")
+            model.add_multiplication_equality(sq_var, [gram_vars[ing.key], gram_vars[ing.key]])
+            sum_sq = sum_sq + sq_var
+            max_sum_sq += ing.max_g ** 2
+
+        # Normalize to [0, diversity_scale]
+        if max_sum_sq > 0:
+            diversity_var = model.new_int_var(0, diversity_scale, "diversity_pct")
+            model.add(diversity_var * max_sum_sq >= sum_sq * diversity_scale)
+            max_diversity = diversity_scale
+
     # Build terms list in priority order
     terms: list[tuple[cp_model.LinearExprT, int]] = []
     for p in priorities:
@@ -431,6 +456,9 @@ def solve(
         elif p == PRIORITY_MACRO_RATIO:
             if combined_macro_var is not None and max_combined_macro > 0:
                 terms.append((combined_macro_var, max_combined_macro))
+        elif p == PRIORITY_INGREDIENT_DIVERSITY:
+            if diversity_var is not None and max_diversity > 0:
+                terms.append((diversity_var, max_diversity))
         elif p == PRIORITY_TOTAL_WEIGHT:
             terms.append((total_grams, max_total))
 

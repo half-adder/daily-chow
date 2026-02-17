@@ -5,6 +5,7 @@ from daily_chow.solver import (
     IngredientInput,
     MacroConstraint,
     MacroRatio,
+    PRIORITY_INGREDIENT_DIVERSITY,
     PRIORITY_MACRO_RATIO,
     PRIORITY_MICROS,
     PRIORITY_TOTAL_WEIGHT,
@@ -387,3 +388,74 @@ class TestRatioExclusion:
         assert sol.status in ("optimal", "feasible")
         # Fat should be ~80g regardless of ratio (integer rounding tolerance)
         assert abs(sol.meal_fat_g - 80) <= 3
+
+
+class TestIngredientDiversity:
+    def test_diversity_spreads_grams(self):
+        """With diversity enabled, no single ingredient should dominate.
+
+        Compare solutions with and without diversity priority.
+        The diversity-enabled solution should have a lower max-ingredient
+        gram count (more even spread).
+        """
+        ingredients = _default_ingredients()
+        sol_no_div = solve(
+            ingredients,
+            priorities=[PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        sol_div = solve(
+            ingredients,
+            priorities=[PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_INGREDIENT_DIVERSITY, PRIORITY_TOTAL_WEIGHT],
+        )
+        assert sol_no_div.status in ("optimal", "feasible")
+        assert sol_div.status in ("optimal", "feasible")
+
+        max_no_div = max(i.grams for i in sol_no_div.ingredients)
+        max_div = max(i.grams for i in sol_div.ingredients)
+        assert max_div <= max_no_div, (
+            f"Diversity should reduce max ingredient: {max_div}g vs {max_no_div}g"
+        )
+
+    def test_diversity_does_not_degrade_micros(self):
+        """Micros priority is above diversity — micro coverage should not suffer."""
+        ingredients = _default_ingredients()
+        micro_targets = {"iron_mg": 4.9, "calcium_mg": 500.0}
+
+        sol_no_div = solve(
+            ingredients,
+            micro_targets=micro_targets,
+            priorities=[PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_TOTAL_WEIGHT],
+        )
+        sol_div = solve(
+            ingredients,
+            micro_targets=micro_targets,
+            priorities=[PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_INGREDIENT_DIVERSITY, PRIORITY_TOTAL_WEIGHT],
+        )
+        assert sol_div.status in ("optimal", "feasible")
+
+        # Micro coverage should be equal or better (within rounding)
+        for key in micro_targets:
+            no_div_val = sol_no_div.micro_totals.get(key, 0.0)
+            div_val = sol_div.micro_totals.get(key, 0.0)
+            assert div_val >= no_div_val - 0.5, (
+                f"{key}: diversity degraded coverage {div_val:.1f} vs {no_div_val:.1f}"
+            )
+
+    def test_diversity_feasible_with_all_priorities(self):
+        """Diversity should work alongside all other objective tiers without overflow."""
+        ingredients = _default_ingredients()
+        micro_targets = {
+            "iron_mg": 10.0, "calcium_mg": 800.0, "magnesium_mg": 300.0,
+            "zinc_mg": 8.0, "vitamin_c_mg": 60.0,
+        }
+        ratio = MacroRatio(carb_pct=50, protein_pct=25, fat_pct=25)
+        constraints = [MacroConstraint("protein", "gte", 130, hard=False)]
+
+        sol = solve(
+            ingredients,
+            micro_targets=micro_targets,
+            macro_ratio=ratio,
+            macro_constraints=constraints,
+            priorities=[PRIORITY_MICROS, PRIORITY_MACRO_RATIO, PRIORITY_INGREDIENT_DIVERSITY, PRIORITY_TOTAL_WEIGHT],
+        )
+        assert sol.status in ("optimal", "feasible")
