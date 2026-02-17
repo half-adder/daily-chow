@@ -140,6 +140,44 @@ class TestMicroOptimization:
             pct = total / target * 100
             assert pct > 5, f"{key} got only {pct:.1f}% — minimax should prevent deep gaps"
 
+    def test_breadth_strategy_improves_coverage_breadth(self):
+        """Breadth strategy (sum-primary) should have fewer nutrients below
+        100% than depth strategy (minimax-primary), at the cost of a
+        potentially worse single-worst nutrient."""
+        ingredients = _default_ingredients()
+        # Targets that force a tradeoff between breadth and depth
+        micro_targets = {
+            "calcium_mg": 800.0,
+            "iron_mg": 10.0,
+            "magnesium_mg": 500.0,
+            "vitamin_c_mg": 200.0,
+        }
+
+        sol_depth = solve(
+            ingredients,
+            micro_targets=micro_targets,
+            micro_strategy="depth",
+        )
+        sol_breadth = solve(
+            ingredients,
+            micro_targets=micro_targets,
+            micro_strategy="breadth",
+        )
+        assert sol_depth.status in ("optimal", "feasible")
+        assert sol_breadth.status in ("optimal", "feasible")
+
+        # Breadth should have lower total shortfall (sum of deficits)
+        def total_shortfall(sol: Solution) -> float:
+            return sum(
+                max(0.0, target - sol.micro_totals.get(key, 0.0))
+                for key, target in micro_targets.items()
+            )
+
+        assert total_shortfall(sol_breadth) <= total_shortfall(sol_depth) + 0.5, (
+            f"Breadth should reduce total shortfall: "
+            f"{total_shortfall(sol_breadth):.1f} vs {total_shortfall(sol_depth):.1f}"
+        )
+
     def test_ul_prevents_excess(self):
         """A tight UL on iron should cap the solver's iron intake."""
         # First solve without UL to find unconstrained iron
@@ -167,6 +205,48 @@ class TestMicroOptimization:
         # Confirm the UL actually constrained the result
         assert iron_total < free_iron, (
             f"UL should have reduced iron from {free_iron:.2f}"
+        )
+
+    def test_ul_soft_penalty_reduces_accumulation(self):
+        """With all 20 micros optimized, the solver pushes nutrients right
+        up to their UL hard caps (e.g. niacin 99% UL, manganese 100% UL).
+
+        A soft UL penalty should keep nutrients well below UL — staying
+        under 80% of UL for nutrients where there's room to maneuver.
+        """
+        ingredients = _default_ingredients()
+        micro_targets = {
+            "calcium_mg": 1000.0, "iron_mg": 8.0, "magnesium_mg": 400.0,
+            "phosphorus_mg": 700.0, "potassium_mg": 3400.0, "zinc_mg": 11.0,
+            "copper_mg": 0.9, "manganese_mg": 2.3, "selenium_mcg": 55.0,
+            "vitamin_c_mg": 90.0, "thiamin_mg": 1.2, "riboflavin_mg": 1.3,
+            "niacin_mg": 16.0, "vitamin_b6_mg": 1.3, "folate_mcg": 400.0,
+            "vitamin_b12_mcg": 2.4, "vitamin_a_mcg": 900.0,
+            "vitamin_d_mcg": 15.0, "vitamin_e_mg": 15.0,
+            "vitamin_k_mcg": 120.0,
+        }
+        micro_uls = {
+            "niacin_mg": 35.0, "iron_mg": 45.0, "zinc_mg": 40.0,
+            "copper_mg": 10.0, "manganese_mg": 11.0, "selenium_mcg": 400.0,
+            "vitamin_c_mg": 2000.0, "folate_mcg": 1000.0,
+            "vitamin_a_mcg": 3000.0, "vitamin_d_mcg": 100.0,
+            "vitamin_e_mg": 1000.0, "calcium_mg": 2500.0,
+            "phosphorus_mg": 4000.0, "vitamin_b6_mg": 100.0,
+        }
+        ratio = MacroRatio(carb_pct=50, protein_pct=25, fat_pct=25)
+
+        sol = solve(
+            ingredients,
+            micro_targets=micro_targets,
+            micro_uls=micro_uls,
+            macro_ratio=ratio,
+        )
+        assert sol.status in ("optimal", "feasible")
+
+        # Niacin should stay well below UL (currently hits 99% UL = 34.5mg)
+        niacin = sol.micro_totals.get("niacin_mg", 0.0)
+        assert niacin < 35.0 * 0.85, (
+            f"Niacin {niacin:.1f}mg should stay below 85% of UL (29.75mg)"
         )
 
     def test_ul_does_not_break_feasibility(self):

@@ -110,6 +110,7 @@ def solve(
     priorities: list[str] | None = None,
     solver_timeout_s: float = 5.0,
     macro_constraints: list[MacroConstraint] | None = None,
+    micro_strategy: str = "depth",
 ) -> Solution:
     """Build and solve the CP-SAT model.
 
@@ -287,6 +288,11 @@ def solve(
     micro_pct_sum: cp_model.LinearExprT = 0
     max_micro_pct_sum = 0
 
+    # Compact percentage scale for micro objectives.  1% precision is
+    # plenty for nutrition and keeps the lex weight chain within int64
+    # even with UL proximity + coverage + sum + other priority levels.
+    _MICRO_PCT = 100
+
     if micro_targets:
         pct_short_vars: list[cp_model.IntVar] = []
         for key, target_val in micro_targets.items():
@@ -300,33 +306,65 @@ def solve(
             shortfall = model.new_int_var(0, target_scaled, f"{key}_short")
             model.add(shortfall >= target_scaled - total_nutrient)
 
-            # Percentage shortfall: pct_short in [0, PCT_SCALE]
-            # Encodes: pct_short / PCT_SCALE >= shortfall / target_scaled
-            # i.e.     pct_short * target_scaled >= shortfall * PCT_SCALE
-            pct_short = model.new_int_var(0, PCT_SCALE, f"{key}_pct_short")
-            model.add(pct_short * target_scaled >= shortfall * PCT_SCALE)
+            # Percentage shortfall: pct_short in [0, _MICRO_PCT]
+            # Encodes: pct_short / _MICRO_PCT >= shortfall / target_scaled
+            # i.e.     pct_short * target_scaled >= shortfall * _MICRO_PCT
+            pct_short = model.new_int_var(0, _MICRO_PCT, f"{key}_pct_short")
+            model.add(pct_short * target_scaled >= shortfall * _MICRO_PCT)
             pct_short_vars.append(pct_short)
 
         if pct_short_vars:
-            worst_pct_var = model.new_int_var(0, PCT_SCALE, "worst_pct")
+            worst_pct_var = model.new_int_var(0, _MICRO_PCT, "worst_pct")
             for ps in pct_short_vars:
                 model.add(worst_pct_var >= ps)
-            max_worst_pct = PCT_SCALE
+            max_worst_pct = _MICRO_PCT
 
-            # Sum-of-percentage-shortfalls tiebreaker.  Use a compact scale
-            # (100 per nutrient instead of PCT_SCALE) so the lex weight chain
-            # has headroom for additional priority levels (e.g. diversity).
-            # This is a secondary tiebreaker — reduced precision is fine.
-            _SUM_SCALE = 100
-            compact_pct_vars: list[cp_model.IntVar] = []
-            for i, ps in enumerate(pct_short_vars):
-                cpv = model.new_int_var(0, _SUM_SCALE, f"compact_pct_{i}")
-                model.add(cpv * PCT_SCALE >= ps * _SUM_SCALE)
-                compact_pct_vars.append(cpv)
-            micro_pct_sum = compact_pct_vars[0]
-            for cpv in compact_pct_vars[1:]:
-                micro_pct_sum = micro_pct_sum + cpv
-            max_micro_pct_sum = len(compact_pct_vars) * _SUM_SCALE
+            # Sum-of-percentage-shortfalls: already at compact scale,
+            # so just sum the pct_short_vars directly.
+            micro_pct_sum = pct_short_vars[0]
+            for ps in pct_short_vars[1:]:
+                micro_pct_sum = micro_pct_sum + ps
+            max_micro_pct_sum = len(pct_short_vars) * _MICRO_PCT
+
+    # ── UL proximity penalty ────────────────────────────────────────────
+    # For nutrients with a UL, penalize accumulation past DRI toward UL.
+    # This is a minimax: minimize the worst (excess / headroom) ratio
+    # across all nutrients that have both a DRI target and a UL.
+    # Placed as the first sub-term within the micros lex level so the
+    # solver prioritizes UL avoidance over coverage optimization.
+    _UL_PROX_SCALE = 100
+    worst_ul_prox_var: cp_model.IntVar | None = None
+    max_worst_ul_prox = 0
+
+    if micro_targets and micro_uls:
+        ul_prox_vars: list[cp_model.IntVar] = []
+        for key, target_val in micro_targets.items():
+            ul_val = micro_uls.get(key)
+            if ul_val is None:
+                continue
+            target_scaled = round(target_val * MICRO_SCALE)
+            ul_scaled = round(ul_val * MICRO_SCALE)
+            headroom = ul_scaled - target_scaled
+            if headroom <= 0:
+                continue
+
+            total_nutrient = _get_nutrient_expr(key)
+
+            # excess = max(0, total - target)
+            excess = model.new_int_var(0, headroom, f"{key}_ul_excess")
+            model.add(excess >= total_nutrient - target_scaled)
+
+            # ul_prox / _UL_PROX_SCALE >= excess / headroom
+            # => ul_prox * headroom >= excess * _UL_PROX_SCALE
+            ul_prox = model.new_int_var(0, _UL_PROX_SCALE, f"{key}_ul_prox")
+            model.add(ul_prox * headroom >= excess * _UL_PROX_SCALE)
+            ul_prox_vars.append(ul_prox)
+
+        if ul_prox_vars:
+            worst_ul_prox_var = model.new_int_var(0, _UL_PROX_SCALE, "worst_ul_prox")
+            for up in ul_prox_vars:
+                model.add(worst_ul_prox_var >= up)
+            max_worst_ul_prox = _UL_PROX_SCALE
 
     # ── Macro ratio minimax objective ──────────────────────────────────
     macro_worst_var: cp_model.IntVar | None = None
@@ -450,10 +488,21 @@ def solve(
     terms: list[tuple[cp_model.LinearExprT, int]] = []
     for p in priorities:
         if p == PRIORITY_MICROS:
-            if worst_pct_var is not None and max_worst_pct > 0:
-                terms.append((worst_pct_var, max_worst_pct))
-            if max_micro_pct_sum > 0:
-                terms.append((micro_pct_sum, max_micro_pct_sum))
+            # UL avoidance first — minimize worst proximity to UL
+            if worst_ul_prox_var is not None and max_worst_ul_prox > 0:
+                terms.append((worst_ul_prox_var, max_worst_ul_prox))
+            # "depth" = minimax primary, sum tiebreaker (best worst-case)
+            # "breadth" = sum primary, minimax tiebreaker (best overall coverage)
+            if micro_strategy == "breadth":
+                if max_micro_pct_sum > 0:
+                    terms.append((micro_pct_sum, max_micro_pct_sum))
+                if worst_pct_var is not None and max_worst_pct > 0:
+                    terms.append((worst_pct_var, max_worst_pct))
+            else:
+                if worst_pct_var is not None and max_worst_pct > 0:
+                    terms.append((worst_pct_var, max_worst_pct))
+                if max_micro_pct_sum > 0:
+                    terms.append((micro_pct_sum, max_micro_pct_sum))
         elif p == PRIORITY_MACRO_RATIO:
             if combined_macro_var is not None and max_combined_macro > 0:
                 terms.append((combined_macro_var, max_combined_macro))

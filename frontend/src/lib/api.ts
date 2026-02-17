@@ -92,7 +92,8 @@ export async function solve(
 	priorities: string[],
 	pinned_micros: Record<string, number> = {},
 	macro_ratio: MacroRatio | null = null,
-	macro_constraints: MacroConstraint[] = []
+	macro_constraints: MacroConstraint[] = [],
+	micro_strategy: 'depth' | 'breadth' = 'depth'
 ): Promise<SolveResponse> {
 	const res = await fetch('/api/solve', {
 		method: 'POST',
@@ -100,7 +101,7 @@ export async function solve(
 		body: JSON.stringify({
 			ingredients, targets, sex, age_group,
 			optimize_nutrients, priorities, pinned_micros,
-			macro_ratio, macro_constraints
+			macro_ratio, macro_constraints, micro_strategy
 		})
 	});
 	return res.json();

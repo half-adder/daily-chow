@@ -68,6 +68,7 @@
 	let proteinPct = $state(25);
 	let fatPct = $state(25);
 	let priorities = $state<string[]>(['micros', 'macro_ratio', 'ingredient_diversity', 'total_weight']);
+	let microStrategy = $state<'depth' | 'breadth'>('breadth');
 	let theme = $state<'dark' | 'light'>('dark');
 
 	// Slider scale
@@ -323,7 +324,8 @@
 					pinned_protein_g: pinnedTotals.protein_g ?? 0,
 					pinned_fat_g: pinnedTotals.fat_g ?? 0
 				},
-				mealConstraints.filter(mc => mc.mode !== 'none')
+				mealConstraints.filter(mc => mc.mode !== 'none'),
+				microStrategy
 			);
 		} catch {
 			solution = null;
@@ -343,7 +345,7 @@
 			dailyCal, macroConstraints,
 			pinnedMeals, pinnedMealsOpen,
 			calTol, carbPct, proteinPct, fatPct,
-			priorities, theme, ingredients,
+			priorities, microStrategy, theme, ingredients,
 			sex, ageGroup,
 			microsOpen, sliderAbsMax, hasSeenWelcome: true
 		};
@@ -413,6 +415,7 @@
 			}
 			sex = s.sex ?? 'male';
 			ageGroup = s.ageGroup ?? '19-30';
+			if (s.microStrategy === 'depth' || s.microStrategy === 'breadth') microStrategy = s.microStrategy;
 			if (s.microsOpen !== undefined) microsOpen = s.microsOpen;
 			if (s.sliderAbsMax) sliderAbsMax = s.sliderAbsMax;
 		} catch { /* ignore corrupt state */ }
@@ -802,6 +805,20 @@
 		<section class="micros-section">
 			<div class="micros-header">
 				<span class="micros-title">Micronutrients</span>
+				<div class="micro-strategy-toggle">
+					<button
+						class="strategy-btn"
+						class:active={microStrategy === 'depth'}
+						onclick={() => { microStrategy = 'depth'; triggerSolve(); }}
+						title="Maximize the worst-case nutrient first (best floor)"
+					>Depth</button>
+					<button
+						class="strategy-btn"
+						class:active={microStrategy === 'breadth'}
+						onclick={() => { microStrategy = 'breadth'; triggerSolve(); }}
+						title="Maximize total coverage across all nutrients first (best average)"
+					>Breadth</button>
+				</div>
 			</div>
 
 			<div class="micros-content">
@@ -1389,6 +1406,38 @@
 		font-size: 15px;
 		font-weight: 600;
 		color: var(--text-primary);
+	}
+
+	.micro-strategy-toggle {
+		display: flex;
+		gap: 2px;
+		margin-left: auto;
+		background: var(--bg-input);
+		border-radius: 6px;
+		padding: 2px;
+	}
+
+	.strategy-btn {
+		background: none;
+		border: none;
+		color: var(--text-muted);
+		font-size: 12px;
+		font-weight: 500;
+		padding: 3px 10px;
+		border-radius: 4px;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+
+	.strategy-btn:hover:not(.active) {
+		color: var(--text-primary);
+	}
+
+	.strategy-btn.active {
+		background: var(--bg-panel);
+		color: var(--text-primary);
+		font-weight: 600;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 	}
 
 	.micros-content {

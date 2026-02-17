@@ -75,6 +75,7 @@ class SolveRequest(BaseModel):
     pinned_micros: dict[str, float] = {}
     macro_ratio: MacroRatioRequest | None = None
     macro_constraints: list[MacroConstraintRequest] = []
+    micro_strategy: str = "depth"
 
 
 class SolvedIngredientResponse(BaseModel):
@@ -233,6 +234,7 @@ def post_solve(req: SolveRequest) -> SolveResponse:
         macro_ratio=macro_ratio,
         priorities=req.priorities,
         macro_constraints=macro_constraints or None,
+        micro_strategy=req.micro_strategy,
     )
 
     # Build micro results for all 20 tracked nutrients
