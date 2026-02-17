@@ -48,6 +48,18 @@
 		return words;
 	});
 
+	// Pre-compute similarity flags so we don't split strings inside the sort comparator
+	let similarFlags = $derived.by(() => {
+		const flags = new Map<string, boolean>();
+		for (const [key, food] of Object.entries(foods)) {
+			const isSimilar = food.name.toLowerCase()
+				.split(/\s+/)
+				.some((w) => w.length >= 3 && planWords.has(w));
+			flags.set(key, isSimilar);
+		}
+		return flags;
+	});
+
 	let results = $derived.by(() => {
 		const q = debouncedQuery.toLowerCase().trim();
 		let entries = Object.entries(foods).filter(([k]) => !existingKeys.has(Number(k)));
@@ -72,11 +84,8 @@
 				});
 		} else {
 			entries = entries.sort(([ka, a], [kb, b]) => {
-				// De-rank items sharing significant name words with plan ingredients
-				const aWords = a.name.toLowerCase().split(/\s+/);
-				const bWords = b.name.toLowerCase().split(/\s+/);
-				const aSimilar = aWords.some((w) => w.length >= 3 && planWords.has(w)) ? 1 : 0;
-				const bSimilar = bWords.some((w) => w.length >= 3 && planWords.has(w)) ? 1 : 0;
+				const aSimilar = similarFlags.get(ka) ? 1 : 0;
+				const bSimilar = similarFlags.get(kb) ? 1 : 0;
 				if (aSimilar !== bSimilar) return aSimilar - bSimilar;
 				const ac = a.commonness ?? 3;
 				const bc = b.commonness ?? 3;
