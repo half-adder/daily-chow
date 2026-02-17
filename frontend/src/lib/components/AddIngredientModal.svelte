@@ -35,6 +35,19 @@
 		return scores;
 	});
 
+	// Significant words from plan ingredient names (for de-ranking similar items in browse)
+	let planWords = $derived.by(() => {
+		const words = new Set<string>();
+		for (const key of existingKeys) {
+			const food = foods[key];
+			if (!food) continue;
+			for (const word of food.name.toLowerCase().split(/\s+/)) {
+				if (word.length >= 3) words.add(word);
+			}
+		}
+		return words;
+	});
+
 	let results = $derived.by(() => {
 		const q = debouncedQuery.toLowerCase().trim();
 		let entries = Object.entries(foods).filter(([k]) => !existingKeys.has(Number(k)));
@@ -59,6 +72,12 @@
 				});
 		} else {
 			entries = entries.sort(([ka, a], [kb, b]) => {
+				// De-rank items sharing significant name words with plan ingredients
+				const aWords = a.name.toLowerCase().split(/\s+/);
+				const bWords = b.name.toLowerCase().split(/\s+/);
+				const aSimilar = aWords.some((w) => w.length >= 3 && planWords.has(w)) ? 1 : 0;
+				const bSimilar = bWords.some((w) => w.length >= 3 && planWords.has(w)) ? 1 : 0;
+				if (aSimilar !== bSimilar) return aSimilar - bSimilar;
 				const ac = a.commonness ?? 3;
 				const bc = b.commonness ?? 3;
 				if (ac !== bc) return bc - ac;
