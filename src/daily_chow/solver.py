@@ -429,28 +429,18 @@ def solve(
         for var, _ in macro_pieces:
             model.add(combined_macro_var >= var)
 
-    # ── Ingredient diversity (L2 regularization) ─────────────────────
-    # Minimize sum of squared grams to encourage even distribution.
-    # sum(gram_i^2) is minimized when grams are spread evenly.
-    # Only built when the priority is active to avoid adding unused
-    # multiplication constraints.
-    diversity_scale = 100
+    # ── Ingredient diversity (minimax) ───────────────────────────────
+    # Minimize the maximum gram amount across all ingredients.
+    # This directly prevents any single ingredient from dominating
+    # and is purely linear (no multiplication constraints).
     diversity_var: cp_model.IntVar | None = None
     max_diversity = 0
     if PRIORITY_INGREDIENT_DIVERSITY in priorities:
-        sum_sq: cp_model.LinearExprT = 0
-        max_sum_sq = 0
+        max_possible = max(ing.max_g for ing in ingredients)
+        diversity_var = model.new_int_var(0, max_possible, "max_gram")
         for ing in ingredients:
-            sq_var = model.new_int_var(0, ing.max_g ** 2, f"sq_{ing.key}")
-            model.add_multiplication_equality(sq_var, [gram_vars[ing.key], gram_vars[ing.key]])
-            sum_sq = sum_sq + sq_var
-            max_sum_sq += ing.max_g ** 2
-
-        # Normalize to [0, diversity_scale]
-        if max_sum_sq > 0:
-            diversity_var = model.new_int_var(0, diversity_scale, "diversity_pct")
-            model.add(diversity_var * max_sum_sq >= sum_sq * diversity_scale)
-            max_diversity = diversity_scale
+            model.add(diversity_var >= gram_vars[ing.key])
+        max_diversity = max_possible
 
     # Build terms list in priority order.
     # Diversity and total_weight are independent lex levels so the user
