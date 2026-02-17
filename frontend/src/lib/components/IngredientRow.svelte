@@ -150,7 +150,7 @@
 
 		<div class="solved-cell">
 			{#if solved}
-				<span class="solved-grams">{solved.grams}g</span>
+				<span class="solved-grams">{Math.round(solved.grams)}g</span>
 			{:else}
 				<span class="solved-none">—</span>
 			{/if}

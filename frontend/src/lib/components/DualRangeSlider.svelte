@@ -64,7 +64,7 @@
 			<div
 				class="solved-marker"
 				style="left: calc(8px + (100% - 16px) * {pct(solvedValue) / 100})"
-				title="{solvedValue}g (solved)"
+				title="{Math.round(solvedValue)}g (solved)"
 			></div>
 		{/if}
 		<input
