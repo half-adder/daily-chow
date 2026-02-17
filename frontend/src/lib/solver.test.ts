@@ -254,6 +254,52 @@ describe('solveLocal', () => {
 		expect(result.status).toBe('infeasible');
 	});
 
+	it('computes micro results with DRI/UL/EAR', async () => {
+		const result = await solveLocal({
+			ingredients: [
+				{ key: 169756, min_g: 100, max_g: 400 },
+				{ key: 170379, min_g: 100, max_g: 300 },
+			],
+			foods: { 169756: rice, 170379: broccoli },
+			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
+			sex: 'male',
+			age_group: '19-30',
+			optimize_nutrients: ['iron_mg', 'calcium_mg'],
+			pinned_micros: { iron_mg: 2.0 },
+		});
+		expect(result.status).toBe('optimal');
+
+		// Should have micro results for all 20 nutrients
+		expect(Object.keys(result.micros).length).toBe(20);
+
+		// Iron should include pinned amount
+		const iron = result.micros.iron_mg;
+		expect(iron).toBeDefined();
+		expect(iron.pinned).toBe(2.0);
+		expect(iron.dri).toBe(8);
+		expect(iron.optimized).toBe(true);
+		expect(iron.total).toBeGreaterThan(0);
+		expect(iron.pct).toBeGreaterThan(0);
+
+		// Calcium should not be pinned
+		const calcium = result.micros.calcium_mg;
+		expect(calcium.pinned).toBe(0);
+		expect(calcium.optimized).toBe(true);
+
+		// Non-optimized nutrients should have optimized=false
+		expect(result.micros.vitamin_k_mcg.optimized).toBe(false);
+	});
+
+	it('returns micros with defaults when sex/age_group not provided', async () => {
+		const result = await solveLocal({
+			ingredients: [{ key: 169756, min_g: 100, max_g: 400 }],
+			foods: { 169756: rice },
+			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
+		});
+		// Should still return micros (using defaults male/19-30)
+		expect(Object.keys(result.micros).length).toBe(20);
+	});
+
 	it('respects hard protein floor', async () => {
 		const result = await solveLocal({
 			ingredients: [

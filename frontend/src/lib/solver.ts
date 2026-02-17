@@ -14,7 +14,9 @@ import type {
 	MacroConstraint,
 	SolveResponse,
 	SolvedIngredient,
+	MicroResult,
 } from '$lib/api';
+import { DRI_TARGETS, DRI_UL, DRI_EAR, MICRO_KEYS } from '$lib/dri';
 import highsLoader from 'highs';
 
 export interface LpModelInput {
@@ -27,6 +29,10 @@ export interface LpModelInput {
 	macro_constraints?: MacroConstraint[];
 	priorities?: string[];
 	micro_strategy?: 'depth' | 'breadth';
+	sex?: string;
+	age_group?: string;
+	optimize_nutrients?: string[];
+	pinned_micros?: Record<string, number>;
 }
 
 // Priority constants matching Python solver
@@ -630,6 +636,55 @@ export function buildLpModel(input: LpModelInput): string {
 	return lines.join('\n');
 }
 
+// ── Micro results computation ───────────────────────────────────────
+
+/**
+ * Compute MicroResult for each of the 20 MICRO_KEYS nutrients.
+ *
+ * Mirrors the Python API logic in api.py lines 240-259.
+ */
+function computeMicroResults(
+	solvedIngredients: SolvedIngredient[],
+	foods: Record<number, Food>,
+	sex: string,
+	ageGroup: string,
+	optimizeNutrients: string[],
+	pinnedMicros: Record<string, number>,
+): Record<string, MicroResult> {
+	const driTable = DRI_TARGETS[sex]?.[ageGroup] ?? {};
+	const earTable = DRI_EAR[sex]?.[ageGroup] ?? {};
+	const ulTable = DRI_UL[sex]?.[ageGroup] ?? {};
+	const optimizedSet = new Set(optimizeNutrients);
+
+	const micros: Record<string, MicroResult> = {};
+	for (const key of MICRO_KEYS) {
+		const driVal = driTable[key] ?? 0;
+		const pinnedVal = pinnedMicros[key] ?? 0;
+		const remainingVal = Math.max(0, driVal - pinnedVal);
+
+		// Sum nutrient from solved grams: grams * food.micros[key] / 100
+		let mealTotal = 0;
+		for (const si of solvedIngredients) {
+			const food = foods[si.key];
+			mealTotal += si.grams * (food.micros[key] ?? 0) / 100;
+		}
+
+		const pct = driVal > 0 ? (mealTotal + pinnedVal) / driVal * 100 : 0;
+
+		micros[key] = {
+			total: Math.round(mealTotal * 100) / 100,
+			pinned: Math.round(pinnedVal * 100) / 100,
+			dri: Math.round(driVal * 100) / 100,
+			remaining: Math.round(remainingVal * 100) / 100,
+			pct: Math.round(pct * 10) / 10,
+			optimized: optimizedSet.has(key),
+			ear: earTable[key] ?? null,
+			ul: ulTable[key] ?? null,
+		};
+	}
+	return micros;
+}
+
 // ── HiGHS solver integration ───────────────────────────────────────
 
 /** Cached HiGHS WASM singleton. */
@@ -717,6 +772,21 @@ export async function solveLocal(input: LpModelInput): Promise<SolveResponse> {
 		totalFiber += fiber;
 	}
 
+	// Compute micro results for all 20 tracked nutrients
+	const sex = input.sex ?? 'male';
+	const ageGroup = input.age_group ?? '19-30';
+	const optimizeNutrients = input.optimize_nutrients ?? [];
+	const pinnedMicros = input.pinned_micros ?? {};
+
+	const micros = computeMicroResults(
+		solvedIngredients,
+		input.foods,
+		sex,
+		ageGroup,
+		optimizeNutrients,
+		pinnedMicros,
+	);
+
 	return {
 		status: 'optimal',
 		ingredients: solvedIngredients,
@@ -725,6 +795,6 @@ export async function solveLocal(input: LpModelInput): Promise<SolveResponse> {
 		meal_fat_g: totalFat,
 		meal_carbs_g: totalCarb,
 		meal_fiber_g: totalFiber,
-		micros: {},
+		micros,
 	};
 }
