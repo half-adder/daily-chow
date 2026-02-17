@@ -67,7 +67,7 @@
 	let carbPct = $state(50);
 	let proteinPct = $state(25);
 	let fatPct = $state(25);
-	let priorities = $state<string[]>(['micros', 'macro_ratio', 'total_weight']);
+	let priorities = $state<string[]>(['micros', 'macro_ratio', 'ingredient_diversity', 'total_weight']);
 	let theme = $state<'dark' | 'light'>('dark');
 
 	// Slider scale
@@ -390,8 +390,14 @@
 					if (idx >= 0) priorities.splice(idx, 0, 'macro_ratio');
 					else priorities.push('macro_ratio');
 				}
+				// Backfill ingredient_diversity into old priority lists
+				if (!priorities.includes('ingredient_diversity')) {
+					const idx = priorities.indexOf('total_weight');
+					if (idx >= 0) priorities.splice(idx, 0, 'ingredient_diversity');
+					else priorities.push('ingredient_diversity');
+				}
 			} else {
-				priorities = ['micros', 'macro_ratio', 'total_weight'];
+				priorities = ['micros', 'macro_ratio', 'ingredient_diversity', 'total_weight'];
 			}
 			if (s.theme === 'light' || s.theme === 'dark') theme = s.theme;
 			if (s.ingredients) {
@@ -598,7 +604,7 @@
 							<span class="priority-rank">{i + 1}.</span>
 							<button class="priority-btn" disabled={i === 0} onclick={() => { [priorities[i - 1], priorities[i]] = [priorities[i], priorities[i - 1]]; priorities = [...priorities]; triggerSolve(); }} title="Move up">&#9650;</button>
 							<button class="priority-btn" disabled={i === priorities.length - 1} onclick={() => { [priorities[i], priorities[i + 1]] = [priorities[i + 1], priorities[i]]; priorities = [...priorities]; triggerSolve(); }} title="Move down">&#9660;</button>
-							<span class="priority-label">{p === 'micros' ? 'Micronutrient coverage' : p === 'macro_ratio' ? 'Macro ratio target' : 'Minimize total weight'}</span>
+							<span class="priority-label">{p === 'micros' ? 'Micronutrient coverage' : p === 'macro_ratio' ? 'Macro ratio target' : p === 'ingredient_diversity' ? 'Ingredient diversity' : 'Minimize total weight'}</span>
 						</div>
 					{/each}
 				</div>
