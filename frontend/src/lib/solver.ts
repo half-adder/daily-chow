@@ -690,9 +690,13 @@ function computeMicroResults(
 /** Cached HiGHS WASM singleton. */
 let highsPromise: ReturnType<typeof highsLoader> | null = null;
 
+const wasmUrl = new URL('../../node_modules/highs/build/highs.wasm', import.meta.url).href;
+
 function getHighs() {
 	if (!highsPromise) {
-		highsPromise = highsLoader();
+		highsPromise = highsLoader({
+			locateFile: () => wasmUrl,
+		});
 	}
 	return highsPromise;
 }

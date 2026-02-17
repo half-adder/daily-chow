@@ -181,6 +181,7 @@ export async function solve(
 			},
 			reject,
 		});
-		w.postMessage({ id, input });
+		// JSON round-trip strips Svelte 5 $state proxies which can't be structured-cloned
+		w.postMessage({ id, input: JSON.parse(JSON.stringify(input)) });
 	});
 }
