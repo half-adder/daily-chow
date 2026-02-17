@@ -882,6 +882,8 @@
 		{foods}
 		{existingKeys}
 		microResults={solution?.micros ?? {}}
+		mealCalories={mealCal}
+		maxPerIngredient={sliderAbsMax}
 		onselect={addIngredient}
 		onclose={() => (showAddModal = false)}
 	/>

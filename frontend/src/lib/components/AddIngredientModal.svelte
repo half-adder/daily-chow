@@ -6,11 +6,13 @@
 		foods: Record<number, Food>;
 		existingKeys: Set<number>;
 		microResults: Record<string, MicroResult>;
+		mealCalories: number;
+		maxPerIngredient: number;
 		onselect: (key: number) => void;
 		onclose: () => void;
 	}
 
-	let { foods, existingKeys, microResults, onselect, onclose }: Props = $props();
+	let { foods, existingKeys, microResults, mealCalories, maxPerIngredient, onselect, onclose }: Props = $props();
 
 	let query = $state('');
 	let debouncedQuery = $state('');
@@ -25,12 +27,18 @@
 
 	let hasMicroData = $derived(Object.keys(microResults).length > 0);
 
+	function estimateServingG(food: Food): number {
+		const numIngredients = Math.max(existingKeys.size, 1);
+		const calShareG = (mealCalories / (numIngredients + 1)) / (food.calories_kcal_per_100g / 100);
+		return Math.min(maxPerIngredient, calShareG);
+	}
+
 	// Pre-compute gap scores once when microResults change, not inside sort
 	let gapScores = $derived.by(() => {
 		if (!hasMicroData) return new Map<string, number>();
 		const scores = new Map<string, number>();
 		for (const [key, food] of Object.entries(foods)) {
-			scores.set(key, computeGapScore(0, food, microResults));
+			scores.set(key, computeGapScore(0, food, microResults, estimateServingG(food)));
 		}
 		return scores;
 	});
@@ -127,7 +135,7 @@
 
 		<div class="results">
 			{#each results as [key, food]}
-				{@const gaps = hasMicroData ? countGapsFilled(food, microResults) : 0}
+				{@const gaps = hasMicroData ? countGapsFilled(food, microResults, estimateServingG(food)) : 0}
 				<button class="result-item" onclick={() => onselect(Number(key))}>
 					<span class="result-name">{food.name}</span>
 					<span class="result-note">{food.subtitle}</span>
