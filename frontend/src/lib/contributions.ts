@@ -98,13 +98,11 @@ export function enrichWithDri(
 	}
 }
 
-// Estimate gap score using a fixed 250g serving assumption
-const ESTIMATED_SERVING_G = 250;
-
 export function computeGapScore(
 	foodKey: number | string,
 	food: Food,
-	microResults: Record<string, MicroResult>
+	microResults: Record<string, MicroResult>,
+	estimatedServingG: number = 250
 ): number {
 	let score = 0;
 
@@ -116,9 +114,11 @@ export function computeGapScore(
 		const per100g = food.micros[key];
 		if (!per100g) continue;
 
-		const wouldAdd = (per100g * ESTIMATED_SERVING_G) / 100;
+		const wouldAdd = (per100g * estimatedServingG) / 100;
 		const fillPct = Math.min(wouldAdd / gap, 1.0);
-		score += fillPct;
+		// Weight by gap severity: nutrients further from 100% matter more
+		const severity = (100 - mr.pct) / 100;
+		score += fillPct * severity;
 	}
 
 	return score;
@@ -126,7 +126,8 @@ export function computeGapScore(
 
 export function countGapsFilled(
 	food: Food,
-	microResults: Record<string, MicroResult>
+	microResults: Record<string, MicroResult>,
+	estimatedServingG: number = 250
 ): number {
 	let count = 0;
 
@@ -138,7 +139,7 @@ export function countGapsFilled(
 		const per100g = food.micros[key];
 		if (!per100g) continue;
 
-		const wouldAdd = (per100g * ESTIMATED_SERVING_G) / 100;
+		const wouldAdd = (per100g * estimatedServingG) / 100;
 		if (wouldAdd / gap > 0.1) count++;
 	}
 
