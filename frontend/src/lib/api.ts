@@ -90,6 +90,7 @@ export async function fetchFoods(): Promise<Record<number, Food>> {
 
 let worker: Worker | null = null;
 let messageId = 0;
+let latestRequestId = 0;
 const pending = new Map<number, {
 	resolve: (r: SolveResponse) => void;
 	reject: (e: Error) => void;
@@ -168,8 +169,18 @@ export async function solve(
 
 	const w = getWorker();
 	const id = ++messageId;
+	latestRequestId = id;
 	return new Promise((resolve, reject) => {
-		pending.set(id, { resolve, reject });
+		pending.set(id, {
+			resolve: (r) => {
+				if (id !== latestRequestId) {
+					reject(new Error('superseded'));
+				} else {
+					resolve(r);
+				}
+			},
+			reject,
+		});
 		w.postMessage({ id, input });
 	});
 }

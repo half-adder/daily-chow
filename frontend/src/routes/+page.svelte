@@ -333,7 +333,8 @@
 				microStrategy,
 				foods
 			);
-		} catch {
+		} catch (e) {
+			if (e instanceof Error && e.message === 'superseded') return;
 			solution = null;
 		}
 		solving = false;
