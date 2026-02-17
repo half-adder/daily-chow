@@ -224,10 +224,15 @@
 	// ── Solver ───────────────────────────────────────────────────────
 
 	let solveTimeout: ReturnType<typeof setTimeout> | null = null;
+	let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+	function debouncedSave() {
+		if (saveTimeout) clearTimeout(saveTimeout);
+		saveTimeout = setTimeout(saveState, 500);
+	}
 
 	function triggerSolve() {
 		if (solveTimeout) clearTimeout(solveTimeout);
-		solveTimeout = setTimeout(doSolve, 30);
+		solveTimeout = setTimeout(doSolve, 50);
 	}
 
 	function addPinnedMeal(meal: PinnedMeal) {
@@ -325,13 +330,14 @@
 					pinned_fat_g: pinnedTotals.fat_g ?? 0
 				},
 				mealConstraints.filter(mc => mc.mode !== 'none'),
-				microStrategy
+				microStrategy,
+				foods
 			);
 		} catch {
 			solution = null;
 		}
 		solving = false;
-		saveState();
+		debouncedSave();
 	}
 
 	function getSolved(key: number): SolvedIngredient | null {
