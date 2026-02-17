@@ -6,7 +6,16 @@
  * units (grams, mg, kcal) — no integer scaling needed.
  */
 
-import type { Food, SolveIngredient, SolveTargets, MacroRatio, MacroConstraint } from '$lib/api';
+import type {
+	Food,
+	SolveIngredient,
+	SolveTargets,
+	MacroRatio,
+	MacroConstraint,
+	SolveResponse,
+	SolvedIngredient,
+} from '$lib/api';
+import highsLoader from 'highs';
 
 export interface LpModelInput {
 	ingredients: SolveIngredient[];
@@ -619,4 +628,103 @@ export function buildLpModel(input: LpModelInput): string {
 	lines.push('End');
 
 	return lines.join('\n');
+}
+
+// ── HiGHS solver integration ───────────────────────────────────────
+
+/** Cached HiGHS WASM singleton. */
+let highsPromise: ReturnType<typeof highsLoader> | null = null;
+
+function getHighs() {
+	if (!highsPromise) {
+		highsPromise = highsLoader();
+	}
+	return highsPromise;
+}
+
+/**
+ * Solve a meal optimisation problem locally using HiGHS WASM.
+ *
+ * Returns a SolveResponse with status, per-ingredient macros, and meal totals.
+ * The `micros` field is left empty (`{}`) — Task 5 will fill it in.
+ */
+export async function solveLocal(input: LpModelInput): Promise<SolveResponse> {
+	// Early exit for empty ingredients
+	if (input.ingredients.length === 0) {
+		return {
+			status: 'infeasible',
+			ingredients: [],
+			meal_calories_kcal: 0,
+			meal_protein_g: 0,
+			meal_fat_g: 0,
+			meal_carbs_g: 0,
+			meal_fiber_g: 0,
+			micros: {},
+		};
+	}
+
+	const lpString = buildLpModel(input);
+	const highs = await getHighs();
+	const result = highs.solve(lpString);
+
+	if (result.Status !== 'Optimal') {
+		return {
+			status: 'infeasible',
+			ingredients: [],
+			meal_calories_kcal: 0,
+			meal_protein_g: 0,
+			meal_fat_g: 0,
+			meal_carbs_g: 0,
+			meal_fiber_g: 0,
+			micros: {},
+		};
+	}
+
+	// Extract gram values from solution columns
+	const solvedIngredients: SolvedIngredient[] = [];
+	let totalCal = 0;
+	let totalPro = 0;
+	let totalFat = 0;
+	let totalCarb = 0;
+	let totalFiber = 0;
+
+	for (const ing of input.ingredients) {
+		const colName = `g_${ing.key}`;
+		const col = result.Columns[colName];
+		const grams = col?.Primal ?? 0;
+
+		const food = input.foods[ing.key];
+		const cal = grams * food.calories_kcal_per_100g / 100;
+		const pro = grams * food.protein_g_per_100g / 100;
+		const fat = grams * food.fat_g_per_100g / 100;
+		const carb = grams * food.carbs_g_per_100g / 100;
+		const fiber = grams * food.fiber_g_per_100g / 100;
+
+		solvedIngredients.push({
+			key: ing.key,
+			grams,
+			calories_kcal: cal,
+			protein_g: pro,
+			fat_g: fat,
+			carbs_g: carb,
+			fiber_g: fiber,
+		});
+
+		totalCal += cal;
+		totalPro += pro;
+		totalFat += fat;
+		totalCarb += carb;
+		totalFiber += fiber;
+	}
+
+	return {
+		status: 'optimal',
+		ingredients: solvedIngredients,
+		meal_calories_kcal: totalCal,
+		meal_protein_g: totalPro,
+		meal_fat_g: totalFat,
+		meal_carbs_g: totalCarb,
+		meal_fiber_g: totalFiber,
+		micros: {},
+	};
 }

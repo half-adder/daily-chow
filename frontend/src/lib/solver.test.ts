@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildLpModel } from './solver';
+import { buildLpModel, solveLocal } from './solver';
 import type { Food } from '$lib/api';
 
 const rice: Food = {
@@ -216,5 +216,57 @@ describe('buildLpModel', () => {
 		// rice: 130 kcal/100g = 1.3 kcal/g
 		expect(lp).toMatch(/cal_lo: 1\.3 g_169756 >= 450/);
 		expect(lp).toMatch(/cal_hi: 1\.3 g_169756 <= 550/);
+	});
+});
+
+describe('solveLocal', () => {
+	it('solves a simple 2-ingredient problem', async () => {
+		const result = await solveLocal({
+			ingredients: [
+				{ key: 169756, min_g: 0, max_g: 400 },
+				{ key: 170379, min_g: 100, max_g: 300 },
+			],
+			foods: { 169756: rice, 170379: broccoli },
+			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
+		});
+		expect(result.status).toBe('optimal');
+		expect(result.ingredients).toHaveLength(2);
+		// Allow small floating-point tolerance from LP solver
+		expect(result.meal_calories_kcal).toBeGreaterThanOrEqual(449);
+		expect(result.meal_calories_kcal).toBeLessThanOrEqual(551);
+	});
+
+	it('returns infeasible for impossible constraints', async () => {
+		const result = await solveLocal({
+			ingredients: [{ key: 169756, min_g: 0, max_g: 10 }],
+			foods: { 169756: rice },
+			targets: { meal_calories_kcal: 500, cal_tolerance: 10 },
+		});
+		expect(result.status).toBe('infeasible');
+	});
+
+	it('returns infeasible for empty ingredients', async () => {
+		const result = await solveLocal({
+			ingredients: [],
+			foods: {},
+			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
+		});
+		expect(result.status).toBe('infeasible');
+	});
+
+	it('respects hard protein floor', async () => {
+		const result = await solveLocal({
+			ingredients: [
+				{ key: 169756, min_g: 0, max_g: 400 },
+				{ key: 170379, min_g: 100, max_g: 500 },
+			],
+			foods: { 169756: rice, 170379: broccoli },
+			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
+			macro_constraints: [
+				{ nutrient: 'protein', mode: 'gte', grams: 10, hard: true },
+			],
+		});
+		expect(result.status).toBe('optimal');
+		expect(result.meal_protein_g).toBeGreaterThanOrEqual(9.5);
 	});
 });
