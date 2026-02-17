@@ -425,8 +425,7 @@ def solve(
     # Minimize sum of squared grams to encourage even distribution.
     # sum(gram_i^2) is minimized when grams are spread evenly.
     # Only built when the priority is active to avoid adding unused
-    # multiplication constraints. Uses a smaller scale (100) than
-    # PCT_SCALE to keep the lexicographic weight chain within int64.
+    # multiplication constraints.
     diversity_scale = 100
     diversity_var: cp_model.IntVar | None = None
     max_diversity = 0
@@ -445,6 +444,38 @@ def solve(
             model.add(diversity_var * max_sum_sq >= sum_sq * diversity_scale)
             max_diversity = diversity_scale
 
+    # ── Combine diversity + total_weight into one lex level ──────────
+    # Adding separate lex levels multiplies the weight chain, which can
+    # overflow int64 when many micro targets are active.  Following the
+    # same pattern as combined_macro (macro_ratio + loose constraints),
+    # we merge diversity and total_weight into a single term.
+    # Diversity dominates via higher weight; total_weight is tiebreaker.
+    #
+    # combined = diversity_pct * (diversity_scale + 1) + weight_norm
+    # This gives diversity strict lexicographic priority within the level.
+    weight_norm_var: cp_model.IntVar | None = None
+    if max_total > 0:
+        weight_norm_var = model.new_int_var(0, diversity_scale, "weight_norm")
+        model.add(weight_norm_var * max_total >= total_grams * diversity_scale)
+
+    combined_div_weight_var: cp_model.IntVar | None = None
+    max_combined_div_weight = 0
+    div_weight_emitted = False
+
+    has_diversity = diversity_var is not None and max_diversity > 0
+    has_weight = PRIORITY_TOTAL_WEIGHT in priorities
+
+    if has_diversity and has_weight and weight_norm_var is not None:
+        # Both present: combine into one term
+        max_combined_div_weight = diversity_scale * (diversity_scale + 1) + diversity_scale
+        combined_div_weight_var = model.new_int_var(
+            0, max_combined_div_weight, "div_weight_combined"
+        )
+        model.add(
+            combined_div_weight_var
+            == diversity_var * (diversity_scale + 1) + weight_norm_var
+        )
+
     # Build terms list in priority order
     terms: list[tuple[cp_model.LinearExprT, int]] = []
     for p in priorities:
@@ -456,11 +487,19 @@ def solve(
         elif p == PRIORITY_MACRO_RATIO:
             if combined_macro_var is not None and max_combined_macro > 0:
                 terms.append((combined_macro_var, max_combined_macro))
-        elif p == PRIORITY_INGREDIENT_DIVERSITY:
-            if diversity_var is not None and max_diversity > 0:
+        elif p in (PRIORITY_INGREDIENT_DIVERSITY, PRIORITY_TOTAL_WEIGHT):
+            if div_weight_emitted:
+                continue  # already emitted the combined term
+            if combined_div_weight_var is not None:
+                # Both active: emit combined term at first encounter
+                terms.append((combined_div_weight_var, max_combined_div_weight))
+                div_weight_emitted = True
+            elif p == PRIORITY_INGREDIENT_DIVERSITY and has_diversity:
                 terms.append((diversity_var, max_diversity))
-        elif p == PRIORITY_TOTAL_WEIGHT:
-            terms.append((total_grams, max_total))
+                div_weight_emitted = True
+            elif p == PRIORITY_TOTAL_WEIGHT:
+                terms.append((total_grams, max_total))
+                div_weight_emitted = True
 
     # Fallback: if no terms (e.g. no micros checked and total_weight not in list),
     # minimize total grams as a sensible default.

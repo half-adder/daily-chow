@@ -441,12 +441,25 @@ class TestIngredientDiversity:
                 f"{key}: diversity degraded coverage {div_val:.1f} vs {no_div_val:.1f}"
             )
 
-    def test_diversity_feasible_with_all_priorities(self):
-        """Diversity should work alongside all other objective tiers without overflow."""
+    def test_diversity_feasible_with_all_priorities_and_20_micros(self):
+        """Diversity must not overflow int64 with all 20 micro targets.
+
+        This is the real-world scenario: the frontend optimizes all 20
+        micronutrients by default, plus macro ratio, loose constraints,
+        diversity, and total weight.  The lex weight chain must fit in
+        int64 even with micro_pct_sum max = 20 * PCT_SCALE = 200,000.
+        """
         ingredients = _default_ingredients()
+        # All 20 micro targets — matches real frontend usage
         micro_targets = {
-            "iron_mg": 10.0, "calcium_mg": 800.0, "magnesium_mg": 300.0,
-            "zinc_mg": 8.0, "vitamin_c_mg": 60.0,
+            "calcium_mg": 1000.0, "iron_mg": 8.0, "magnesium_mg": 400.0,
+            "phosphorus_mg": 700.0, "potassium_mg": 3400.0, "zinc_mg": 11.0,
+            "copper_mg": 0.9, "manganese_mg": 2.3, "selenium_mcg": 55.0,
+            "vitamin_c_mg": 90.0, "thiamin_mg": 1.2, "riboflavin_mg": 1.3,
+            "niacin_mg": 16.0, "vitamin_b6_mg": 1.3, "folate_mcg": 400.0,
+            "vitamin_b12_mcg": 2.4, "vitamin_a_mcg": 900.0,
+            "vitamin_d_mcg": 15.0, "vitamin_e_mg": 15.0,
+            "vitamin_k_mcg": 120.0,
         }
         ratio = MacroRatio(carb_pct=50, protein_pct=25, fat_pct=25)
         constraints = [MacroConstraint("protein", "gte", 130, hard=False)]
