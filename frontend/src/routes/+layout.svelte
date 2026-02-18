@@ -32,11 +32,21 @@
 		--text-micro: #cbd5e1;
 		--text-segment: #fff;
 
+		/* Accent */
+		--accent: #7c6cf0;
+		--accent-positive: #22c55e;
+		--accent-warning: #f59e0b;
+		--accent-danger: #ef4444;
+
 		/* Shadows */
 		--shadow-overlay: rgba(0, 0, 0, 0.6);
 		--shadow-modal: rgba(0, 0, 0, 0.5);
 		--shadow-tooltip: rgba(0, 0, 0, 0.4);
 		--shadow-text: rgba(0, 0, 0, 0.3);
+
+		/* Typography */
+		--font-ui: 'Outfit', system-ui, sans-serif;
+		--font-mono: 'DM Mono', ui-monospace, monospace;
 	}
 
 	:global([data-theme='light']) {
@@ -59,9 +69,18 @@
 		--text-micro: #334155;
 		--text-segment: #fff;
 
+		--accent: #6d5ce7;
+		--accent-positive: #16a34a;
+		--accent-warning: #d97706;
+		--accent-danger: #dc2626;
+
 		--shadow-overlay: rgba(0, 0, 0, 0.3);
 		--shadow-modal: rgba(0, 0, 0, 0.15);
 		--shadow-tooltip: rgba(0, 0, 0, 0.1);
 		--shadow-text: rgba(0, 0, 0, 0.15);
+	}
+
+	:global(body) {
+		font-family: var(--font-ui);
 	}
 </style>

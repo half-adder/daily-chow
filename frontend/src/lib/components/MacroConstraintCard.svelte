@@ -157,7 +157,7 @@
 	.mc-symbol {
 		font-size: 32px;
 		font-weight: 700;
-		color: var(--accent, #7c6cf0);
+		color: var(--accent);
 		cursor: pointer;
 		line-height: 1;
 		flex: 0 0 auto;
@@ -170,7 +170,7 @@
 	}
 
 	.mc-symbol:active {
-		background: var(--bg-hover, rgba(124, 108, 240, 0.15));
+		background: color-mix(in srgb, var(--accent) 15%, transparent);
 	}
 
 	.mc-value {
@@ -243,7 +243,7 @@
 	}
 
 	.toggle-switch input:checked ~ .toggle-track {
-		background: var(--accent, #7c6cf0);
+		background: var(--accent);
 	}
 
 	.hard-track {

@@ -972,7 +972,6 @@
 		margin: 0;
 		background: var(--bg-body);
 		color: var(--text-primary);
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 	}
 
 	.app {
