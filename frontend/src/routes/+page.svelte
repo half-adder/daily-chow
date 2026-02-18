@@ -1718,4 +1718,52 @@
 		color: #ef4444;
 		background: rgba(239, 68, 68, 0.1);
 	}
+
+	/* ── Mobile (≤640px) ─────────────────────────────── */
+
+	@media (max-width: 640px) {
+		.app {
+			padding: 16px 12px;
+		}
+
+		h1 {
+			font-size: 22px;
+		}
+
+		.targets-section {
+			padding: 12px 14px;
+		}
+
+		.targets-row {
+			flex-direction: column;
+			gap: 8px;
+		}
+
+		.cal-row {
+			width: 100%;
+		}
+
+		.cal-row-symbol {
+			height: 24px;
+		}
+
+		.target-group {
+			flex-direction: row;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.target-group label {
+			min-width: 32px;
+		}
+
+		.priority-group {
+			flex-direction: column;
+			min-width: 0;
+		}
+
+		.ingredients-header {
+			display: none;
+		}
+	}
 </style>
