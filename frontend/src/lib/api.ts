@@ -81,9 +81,88 @@ export interface SolveResponse {
 	micros: Record<string, MicroResult>;
 }
 
+// USDA nutrient ID → macro field extraction (prefer Atwater General for calories)
+const MACRO_USDA_IDS: Record<string, number[]> = {
+	calories_kcal: [2047, 1008],
+	protein_g: [1003],
+	fat_g: [1004],
+	carbs_g: [1005],
+	fiber_g: [1079],
+};
+
+// USDA nutrient ID → canonical micro key
+const USDA_ID_TO_MICRO: Record<number, string> = {
+	1087: 'calcium_mg',
+	1089: 'iron_mg',
+	1090: 'magnesium_mg',
+	1091: 'phosphorus_mg',
+	1092: 'potassium_mg',
+	1095: 'zinc_mg',
+	1098: 'copper_mg',
+	1101: 'manganese_mg',
+	1103: 'selenium_mcg',
+	1162: 'vitamin_c_mg',
+	1165: 'thiamin_mg',
+	1166: 'riboflavin_mg',
+	1167: 'niacin_mg',
+	1175: 'vitamin_b6_mg',
+	1177: 'folate_mcg',
+	1178: 'vitamin_b12_mcg',
+	1106: 'vitamin_a_mcg',
+	1114: 'vitamin_d_mcg',
+	1109: 'vitamin_e_mg',
+	1185: 'vitamin_k_mcg',
+};
+
+function extractMacro(nutrients: Record<string, number>, usdaIds: number[]): number {
+	for (const id of usdaIds) {
+		const val = nutrients[String(id)];
+		if (val !== undefined) return val;
+	}
+	return 0;
+}
+
+function transformFood(entry: RawFood): Food {
+	const n = entry.nutrients;
+	const micros: Record<string, number> = {};
+	for (const [uid, amount] of Object.entries(n)) {
+		const key = USDA_ID_TO_MICRO[Number(uid)];
+		if (key) micros[key] = amount;
+	}
+	return {
+		fdc_id: entry.fdc_id,
+		name: entry.name,
+		subtitle: entry.subtitle ?? '',
+		usda_description: entry.usda_description ?? entry.name,
+		category: entry.category ?? '',
+		commonness: entry.commonness ?? 3,
+		calories_kcal_per_100g: extractMacro(n, MACRO_USDA_IDS.calories_kcal),
+		protein_g_per_100g: extractMacro(n, MACRO_USDA_IDS.protein_g),
+		fat_g_per_100g: extractMacro(n, MACRO_USDA_IDS.fat_g),
+		carbs_g_per_100g: extractMacro(n, MACRO_USDA_IDS.carbs_g),
+		fiber_g_per_100g: extractMacro(n, MACRO_USDA_IDS.fiber_g),
+		micros,
+	};
+}
+
+interface RawFood {
+	fdc_id: number;
+	name: string;
+	subtitle?: string;
+	usda_description?: string;
+	category?: string;
+	commonness?: number;
+	nutrients: Record<string, number>;
+}
+
 export async function fetchFoods(): Promise<Record<number, Food>> {
-	const res = await fetch('/api/foods');
-	return res.json();
+	const res = await fetch('/foods.json');
+	const raw: RawFood[] = await res.json();
+	const foods: Record<number, Food> = {};
+	for (const entry of raw) {
+		foods[entry.fdc_id] = transformFood(entry);
+	}
+	return foods;
 }
 
 // ── Web Worker solver ────────────────────────────────────────────────
