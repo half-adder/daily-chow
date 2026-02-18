@@ -103,13 +103,13 @@
 
 <style>
 	.mc-card {
-		border: 1px solid var(--border-subtle, #2a2a2a);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		padding: 10px 10px;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		background: var(--bg-card, #1a1a1a);
+		background: var(--bg-panel);
 		transition: opacity 0.15s;
 		/* Prevent grid blowout */
 		min-width: 0;
@@ -142,7 +142,7 @@
 
 	.mc-divider {
 		height: 1px;
-		background: var(--border-subtle, #2a2a2a);
+		background: var(--border);
 		margin: 0 -2px;
 	}
 
