@@ -69,7 +69,7 @@
 		align-items: center;
 		gap: 8px;
 		padding: 10px 12px;
-		background: var(--bg-card);
+		background: var(--bg-panel);
 		border: 1px solid var(--border-input);
 		border-radius: 8px;
 		font-size: 14px;
@@ -106,5 +106,6 @@
 
 	:global(.priority-card-drag) {
 		opacity: 0.9;
+		background: var(--bg-panel) !important;
 	}
 </style>
