@@ -72,6 +72,7 @@
 	let priorities = $state<string[]>(['micros', 'macro_ratio', 'ingredient_diversity', 'total_weight']);
 	let microStrategy = $state<'depth' | 'breadth'>('breadth');
 	let isMobile = $state(false);
+	let prioritiesOpen = $state(false);
 	let theme = $state<'dark' | 'light'>('dark');
 
 	// Slider scale
@@ -619,11 +620,19 @@
 					}}
 				/>
 			{/each}
-			<div class="target-group priority-group">
-				<label>Solve priorities</label>
-				{#if isMobile}
-					<PriorityCards {priorities} onreorder={(newOrder) => { priorities = newOrder; triggerSolve(); }} />
-				{:else}
+			{#if isMobile}
+				<div class="priority-collapsible">
+					<button class="priority-toggle" onclick={() => { prioritiesOpen = !prioritiesOpen; }}>
+						<span class="priority-arrow" class:open={prioritiesOpen}>▸</span>
+						Solve priorities
+					</button>
+					{#if prioritiesOpen}
+						<PriorityCards {priorities} onreorder={(newOrder) => { priorities = newOrder; triggerSolve(); }} />
+					{/if}
+				</div>
+			{:else}
+				<div class="target-group priority-group">
+					<label>Solve priorities</label>
 					<div class="priority-list">
 						{#each priorities as p, i}
 							<div class="priority-row">
@@ -634,8 +643,8 @@
 							</div>
 						{/each}
 					</div>
-				{/if}
-			</div>
+				</div>
+			{/if}
 			<div class="target-group">
 				<label>Sex</label>
 				<div class="target-input-row">
@@ -1206,6 +1215,33 @@
 
 	.priority-label {
 		color: var(--text-primary);
+	}
+
+	.priority-collapsible {
+		width: 100%;
+	}
+
+	.priority-toggle {
+		background: none;
+		border: none;
+		color: var(--text-primary);
+		font-size: 15px;
+		font-weight: 600;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 0;
+	}
+
+	.priority-arrow {
+		display: inline-block;
+		transition: transform 0.15s;
+		font-size: 12px;
+	}
+
+	.priority-arrow.open {
+		transform: rotate(90deg);
 	}
 
 	.unit {
