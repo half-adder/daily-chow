@@ -232,7 +232,7 @@
 
 	function triggerSolve() {
 		if (solveTimeout) clearTimeout(solveTimeout);
-		solveTimeout = setTimeout(doSolve, 50);
+		solveTimeout = setTimeout(doSolve, 0);
 	}
 
 	function addPinnedMeal(meal: PinnedMeal) {
