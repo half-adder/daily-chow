@@ -73,6 +73,7 @@
 	let fatPct = $state(25);
 	let priorities = $state<string[]>(['micros', 'macro_ratio', 'ingredient_diversity', 'total_weight']);
 	let microStrategy = $state<'depth' | 'breadth'>('breadth');
+	let lexTolerance = $state(4); // percentage (0-10)
 	let isMobile = $state(false);
 	let prioritiesOpen = $state(false);
 	let theme = $state<'dark' | 'light'>('dark');
@@ -348,7 +349,8 @@
 					pinned_fat_g: pinnedTotals.fat_g ?? 0
 				},
 				mealConstraints.filter(mc => mc.mode !== 'none'),
-				microStrategy
+				microStrategy,
+				lexTolerance / 100
 			);
 		} catch (e) {
 			if (e instanceof Error && e.message === 'superseded') return;
@@ -637,6 +639,15 @@
 			<div class="priority-sidebar">
 				<span class="priority-sidebar-label">Solve priorities</span>
 				<PriorityCards {priorities} onreorder={(newOrder) => { priorities = newOrder; triggerSolve(); }} />
+				<div class="lex-tolerance-slider">
+					<label>Priority flex: {lexTolerance}%
+						<span class="info-tip">
+							<button class="info-btn" type="button">?</button>
+							<span class="info-popup">How much each priority level can bend to help lower priorities. At 0% the solver is strict — higher priorities never compromise. Higher values let lower priorities improve by allowing small trade-offs above.</span>
+						</span>
+					</label>
+					<input type="range" min="0" max="10" step="1" bind:value={lexTolerance} oninput={() => triggerSolve()} />
+				</div>
 				<div class="ratio-target ratio-target-sidebar">
 					<label>Macro target</label>
 					<MacroRatioBar
@@ -656,6 +667,15 @@
 			</button>
 			{#if prioritiesOpen}
 				<PriorityCards {priorities} onreorder={(newOrder) => { priorities = newOrder; triggerSolve(); }} />
+				<div class="lex-tolerance-slider">
+					<label>Priority flex: {lexTolerance}%
+						<span class="info-tip">
+							<button class="info-btn" type="button">?</button>
+							<span class="info-popup">How much each priority level can bend to help lower priorities. At 0% the solver is strict — higher priorities never compromise. Higher values let lower priorities improve by allowing small trade-offs above.</span>
+						</span>
+					</label>
+					<input type="range" min="0" max="10" step="1" bind:value={lexTolerance} oninput={() => triggerSolve()} />
+				</div>
 			{/if}
 		</div>
 		<div class="ratio-target ratio-target-mobile">
@@ -1127,6 +1147,70 @@
 		color: var(--text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+	}
+
+	.lex-tolerance-slider {
+		padding: 4px 0;
+	}
+	.lex-tolerance-slider label {
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.lex-tolerance-slider input[type="range"] {
+		width: 100%;
+		margin: 4px 0 0;
+		accent-color: var(--accent);
+	}
+
+	.info-tip {
+		position: relative;
+		display: inline-block;
+		vertical-align: middle;
+	}
+	.info-btn {
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		border: 1px solid var(--text-muted);
+		background: transparent;
+		color: var(--text-muted);
+		font-size: 10px;
+		font-weight: 700;
+		line-height: 1;
+		padding: 0;
+		cursor: pointer;
+		margin-left: 4px;
+	}
+	.info-btn:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.info-popup {
+		display: none;
+		position: absolute;
+		bottom: calc(100% + 8px);
+		left: 50%;
+		transform: translateX(-50%);
+		width: 220px;
+		padding: 8px 10px;
+		border-radius: 6px;
+		background: var(--card-bg, #2a2a2a);
+		border: 1px solid var(--border, #444);
+		color: var(--text-primary, #eee);
+		font-size: 12px;
+		font-weight: 400;
+		line-height: 1.4;
+		text-transform: none;
+		letter-spacing: normal;
+		box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+		z-index: 100;
+	}
+	.info-tip:hover .info-popup,
+	.info-tip:focus-within .info-popup {
+		display: block;
 	}
 
 	.ratio-target {

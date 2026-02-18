@@ -29,6 +29,7 @@ export interface LpModelInput {
 	macro_constraints?: MacroConstraint[];
 	priorities?: string[];
 	micro_strategy?: 'depth' | 'breadth';
+	lex_tolerance?: number;
 	sex?: string;
 	age_group?: string;
 	optimize_nutrients?: string[];
@@ -94,7 +95,14 @@ function sanitize(key: string): string {
 	return key.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
-export function buildLpModel(input: LpModelInput): string {
+export interface LpModelComponents {
+	ingredients: LpModelInput['ingredients'];
+	constraints: string[];
+	bounds: string[];
+	lexLevels: { varName: string; maxVal: number }[][];
+}
+
+export function buildLpModel(input: LpModelInput): LpModelComponents {
 	const {
 		ingredients,
 		foods,
@@ -279,7 +287,8 @@ export function buildLpModel(input: LpModelInput): string {
 			const terms = microTerms(key);
 			if (terms.length === 0) continue;
 			const sKey = sanitize(key);
-			constraints.push(` ul_${sKey}: ${buildExpr(terms)} <= ${fmt(ulVal)}`);
+			// Cap at 85% of UL for safety margin
+			constraints.push(` ul_${sKey}: ${buildExpr(terms)} <= ${fmt(ulVal * 0.85)}`);
 		}
 	}
 
@@ -553,76 +562,79 @@ export function buildLpModel(input: LpModelInput): string {
 		maxDiversity = maxPossible;
 	}
 
-	// ── Build lexicographic objective ───────────────────────────────
+	// ── Collect lexicographic objective levels ──────────────────────
 	const maxTotal = ingredients.reduce((s, ing) => s + ing.max_g, 0);
 
-	// Collect terms in priority order: (varName, maxVal)
-	const lexTerms: { varName: string; maxVal: number }[] = [];
+	// Each priority level has one or more terms to minimize in order.
+	// We collect them grouped by level for multi-pass lexicographic solving.
+	type LexTerm = { varName: string; maxVal: number };
+	const lexLevels: LexTerm[][] = [];
 
 	for (const p of priorities) {
+		const level: LexTerm[] = [];
 		if (p === PRIORITY_MICROS) {
-			if (hasWorstUlProx && maxWorstUlProx > 0) {
-				lexTerms.push({ varName: 'worst_ul_prox', maxVal: maxWorstUlProx });
-			}
 			if (micro_strategy === 'breadth') {
 				if (hasMicroSum && maxMicroPctSum > 0) {
-					lexTerms.push({ varName: 'micro_sum', maxVal: maxMicroPctSum });
+					level.push({ varName: 'micro_sum', maxVal: maxMicroPctSum });
 				}
 				if (hasWorstPct && maxWorstPct > 0) {
-					lexTerms.push({ varName: 'worst_pct', maxVal: maxWorstPct });
+					level.push({ varName: 'worst_pct', maxVal: maxWorstPct });
 				}
 			} else {
 				if (hasWorstPct && maxWorstPct > 0) {
-					lexTerms.push({ varName: 'worst_pct', maxVal: maxWorstPct });
+					level.push({ varName: 'worst_pct', maxVal: maxWorstPct });
 				}
 				if (hasMicroSum && maxMicroPctSum > 0) {
-					lexTerms.push({ varName: 'micro_sum', maxVal: maxMicroPctSum });
+					level.push({ varName: 'micro_sum', maxVal: maxMicroPctSum });
 				}
+			}
+			// UL proximity is a tiebreaker: avoid being near upper limits,
+			// but only after maximizing DRI coverage
+			if (hasWorstUlProx && maxWorstUlProx > 0) {
+				level.push({ varName: 'worst_ul_prox', maxVal: maxWorstUlProx });
 			}
 		} else if (p === PRIORITY_MACRO_RATIO) {
 			if (hasCombinedMacro && combinedMacroVar && maxCombinedMacro > 0) {
-				lexTerms.push({ varName: combinedMacroVar, maxVal: maxCombinedMacro });
+				level.push({ varName: combinedMacroVar, maxVal: maxCombinedMacro });
 			}
 		} else if (p === PRIORITY_INGREDIENT_DIVERSITY) {
 			if (hasDiversity && maxDiversity > 0) {
-				lexTerms.push({ varName: 'max_gram', maxVal: maxDiversity });
+				level.push({ varName: 'max_gram', maxVal: maxDiversity });
 			}
 		} else if (p === PRIORITY_TOTAL_WEIGHT) {
-			// total_weight = sum of all g_<key> — expressed inline in objective
-			lexTerms.push({ varName: '__total_weight__', maxVal: maxTotal });
+			level.push({ varName: '__total_weight__', maxVal: maxTotal });
 		}
+		if (level.length > 0) lexLevels.push(level);
 	}
 
 	// Fallback: if no terms, minimize total weight
-	if (lexTerms.length === 0) {
-		lexTerms.push({ varName: '__total_weight__', maxVal: maxTotal });
+	if (lexLevels.length === 0) {
+		lexLevels.push([{ varName: '__total_weight__', maxVal: maxTotal }]);
 	}
 
-	// Compute weights: w[-1]=1, w[i] = max[i+1] * w[i+1] + 1
-	const weights = new Array(lexTerms.length).fill(1);
-	for (let i = lexTerms.length - 2; i >= 0; i--) {
-		weights[i] = lexTerms[i + 1].maxVal * weights[i + 1] + 1;
-	}
+	// ── Assemble LP components ─────────────────────────────────────
+	// Return structured model for multi-pass lex solving
+	return { ingredients, constraints, bounds, lexLevels };
+}
 
-	// Build objective expression
-	const objExprTerms: [number, string][] = [];
-	for (let i = 0; i < lexTerms.length; i++) {
-		const w = weights[i];
-		const t = lexTerms[i];
-		if (t.varName === '__total_weight__') {
-			// Expand inline: w * sum(g_<key>)
-			for (const ing of ingredients) {
-				objExprTerms.push([w, `g_${ing.key}`]);
-			}
-		} else {
-			objExprTerms.push([w, t.varName]);
-		}
-	}
+/** Convert model components to a single LP string (for testing/debugging). */
+export function modelToLpString(model: LpModelComponents): string {
+	const allTerms: { varName: string; maxVal: number }[] = model.lexLevels.flat();
+	if (allTerms.length === 0) return '';
+	const objTerms = buildLevelObjective(allTerms, model.ingredients);
+	return assembleLp(model.ingredients, model.constraints, model.bounds, objTerms);
+}
 
-	// ── Assemble LP string ──────────────────────────────────────────
+/** Build an LP string from components with a specific objective. */
+function assembleLp(
+	ingredients: LpModelInput['ingredients'],
+	constraints: string[],
+	bounds: string[],
+	objTerms: [number, string][],
+): string {
 	const lines: string[] = [];
 	lines.push('Minimize');
-	lines.push(` obj: ${buildExpr(objExprTerms)}`);
+	lines.push(` obj: ${buildExpr(objTerms)}`);
 	lines.push('Subject To');
 	for (const c of constraints) {
 		lines.push(c);
@@ -632,8 +644,38 @@ export function buildLpModel(input: LpModelInput): string {
 		lines.push(b);
 	}
 	lines.push('End');
-
 	return lines.join('\n');
+}
+
+/** Build objective terms for a set of lex terms within one priority level. */
+function buildLevelObjective(
+	level: { varName: string; maxVal: number }[],
+	ingredients: LpModelInput['ingredients'],
+): [number, string][] {
+	// Within a level, use weighted sum for lex dominance:
+	// w[i] = 1 + sum_{j>i} maxVal[j] * w[j]
+	// This guarantees w[i] > total contribution of all lower-priority terms.
+	const weights = new Array(level.length).fill(1);
+	for (let i = level.length - 2; i >= 0; i--) {
+		let lowerSum = 0;
+		for (let j = i + 1; j < level.length; j++) {
+			lowerSum += level[j].maxVal * weights[j];
+		}
+		weights[i] = lowerSum + 1;
+	}
+
+	const terms: [number, string][] = [];
+	for (let i = 0; i < level.length; i++) {
+		const t = level[i];
+		if (t.varName === '__total_weight__') {
+			for (const ing of ingredients) {
+				terms.push([weights[i], `g_${ing.key}`]);
+			}
+		} else {
+			terms.push([weights[i], t.varName]);
+		}
+	}
+	return terms;
 }
 
 // ── Micro results computation ───────────────────────────────────────
@@ -713,36 +755,61 @@ export function warmupHighs() {
  * The `micros` field is left empty (`{}`) — Task 5 will fill it in.
  */
 export async function solveLocal(input: LpModelInput): Promise<SolveResponse> {
+	const infeasible: SolveResponse = {
+		status: 'infeasible',
+		ingredients: [],
+		meal_calories_kcal: 0,
+		meal_protein_g: 0,
+		meal_fat_g: 0,
+		meal_carbs_g: 0,
+		meal_fiber_g: 0,
+		micros: {},
+	};
+
 	// Early exit for empty ingredients
-	if (input.ingredients.length === 0) {
-		return {
-			status: 'infeasible',
-			ingredients: [],
-			meal_calories_kcal: 0,
-			meal_protein_g: 0,
-			meal_fat_g: 0,
-			meal_carbs_g: 0,
-			meal_fiber_g: 0,
-			micros: {},
-		};
-	}
+	if (input.ingredients.length === 0) return infeasible;
 
-	const lpString = buildLpModel(input);
+	const model = buildLpModel(input);
 	const highs = await getHighs();
-	const result = highs.solve(lpString);
 
-	if (result.Status !== 'Optimal') {
-		return {
-			status: 'infeasible',
-			ingredients: [],
-			meal_calories_kcal: 0,
-			meal_protein_g: 0,
-			meal_fat_g: 0,
-			meal_carbs_g: 0,
-			meal_fiber_g: 0,
-			micros: {},
-		};
+	// Multi-pass lexicographic solving: for each priority level, solve minimizing
+	// that level's objective, then constrain the optimal value before the next pass.
+	// This guarantees strict priority ordering without numerical weight issues.
+	const { ingredients: modelIngredients, lexLevels } = model;
+	let { constraints, bounds } = model;
+	// Copy so we can add pin constraints without mutating
+	constraints = [...constraints];
+
+	// Relative tolerance: allow each level's objective to worsen by this fraction
+	// of its optimal value when optimizing lower-priority levels.
+	const REL_TOL = input.lex_tolerance ?? 0.04;
+	const ABS_TOL = 1e-4;  // absolute floor for near-zero optima
+
+	let result: ReturnType<typeof highs.solve> | null = null;
+	let pinIdx = 0;
+
+	for (let pass = 0; pass < lexLevels.length; pass++) {
+		const level = lexLevels[pass];
+		const objTerms = buildLevelObjective(level, modelIngredients);
+		const lpString = assembleLp(modelIngredients, constraints, bounds, objTerms);
+		result = highs.solve(lpString);
+
+		if (result.Status !== 'Optimal') return infeasible;
+
+		// Skip pinning on the last pass (nothing to protect)
+		if (pass === lexLevels.length - 1) break;
+
+		// Pin the objective value: sum(w_i * var_i) <= optimal + tolerance.
+		// This is more robust than pinning individual variables.
+		const optObj = result.ObjectiveValue ?? 0;
+		const tol = Math.max(Math.abs(optObj) * REL_TOL, ABS_TOL);
+		const pinExpr = buildExpr(objTerms);
+		constraints.push(
+			` lex_pin_${pinIdx++}: ${pinExpr} <= ${fmt(optObj + tol)}`
+		);
 	}
+
+	if (!result || result.Status !== 'Optimal') return infeasible;
 
 	// Extract gram values from solution columns
 	const solvedIngredients: SolvedIngredient[] = [];

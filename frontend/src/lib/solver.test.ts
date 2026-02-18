@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildLpModel, solveLocal } from './solver';
+import { buildLpModel, modelToLpString, solveLocal } from './solver';
 import type { Food } from '$lib/api';
 
 const rice: Food = {
@@ -34,11 +34,11 @@ const broccoli: Food = {
 
 describe('buildLpModel', () => {
 	it('generates valid LP with calorie band', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [{ key: 169756, min_g: 0, max_g: 400 }],
 			foods: { 169756: rice },
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
-		});
+		}));
 		expect(lp).toContain('Minimize');
 		expect(lp).toContain('Subject To');
 		expect(lp).toContain('Bounds');
@@ -48,7 +48,7 @@ describe('buildLpModel', () => {
 	});
 
 	it('includes hard macro constraints', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [
 				{ key: 169756, min_g: 0, max_g: 400 },
 				{ key: 170379, min_g: 100, max_g: 300 },
@@ -56,12 +56,12 @@ describe('buildLpModel', () => {
 			foods: { 169756: rice, 170379: broccoli },
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
 			macro_constraints: [{ nutrient: 'protein', mode: 'gte', grams: 30, hard: true }],
-		});
+		}));
 		expect(lp).toMatch(/protein_gte:/);
 	});
 
 	it('includes micro shortfall variables', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [
 				{ key: 169756, min_g: 0, max_g: 400 },
 				{ key: 170379, min_g: 100, max_g: 300 },
@@ -69,23 +69,23 @@ describe('buildLpModel', () => {
 			foods: { 169756: rice, 170379: broccoli },
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
 			micro_targets: { iron_mg: 8.0 },
-		});
+		}));
 		expect(lp).toMatch(/iron_mg_short/);
 		expect(lp).toMatch(/iron_mg_pct/);
 		expect(lp).toMatch(/worst_pct/);
 	});
 
 	it('includes ingredient bounds', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [{ key: 169756, min_g: 50, max_g: 400 }],
 			foods: { 169756: rice },
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
-		});
+		}));
 		expect(lp).toMatch(/50 <= g_169756 <= 400/);
 	});
 
 	it('includes soft macro constraints with deviation vars', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [
 				{ key: 169756, min_g: 0, max_g: 400 },
 				{ key: 170379, min_g: 0, max_g: 300 },
@@ -93,14 +93,14 @@ describe('buildLpModel', () => {
 			foods: { 169756: rice, 170379: broccoli },
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
 			macro_constraints: [{ nutrient: 'protein', mode: 'gte', grams: 30, hard: false }],
-		});
+		}));
 		expect(lp).toMatch(/loose_protein_gte_dev/);
 		expect(lp).toMatch(/loose_protein_gte_pct/);
 		expect(lp).toMatch(/worst_loose/);
 	});
 
 	it('includes UL hard constraints', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [
 				{ key: 169756, min_g: 0, max_g: 400 },
 				{ key: 170379, min_g: 0, max_g: 300 },
@@ -108,12 +108,12 @@ describe('buildLpModel', () => {
 			foods: { 169756: rice, 170379: broccoli },
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
 			micro_uls: { iron_mg: 45 },
-		});
+		}));
 		expect(lp).toMatch(/ul_iron_mg:/);
 	});
 
 	it('includes UL proximity penalty when both targets and ULs exist', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [
 				{ key: 169756, min_g: 0, max_g: 400 },
 				{ key: 170379, min_g: 0, max_g: 300 },
@@ -122,14 +122,14 @@ describe('buildLpModel', () => {
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
 			micro_targets: { iron_mg: 8.0 },
 			micro_uls: { iron_mg: 45 },
-		});
+		}));
 		expect(lp).toMatch(/iron_mg_ul_excess/);
 		expect(lp).toMatch(/iron_mg_ul_prox/);
 		expect(lp).toMatch(/worst_ul_prox/);
 	});
 
 	it('includes macro ratio minimax', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [
 				{ key: 169756, min_g: 0, max_g: 400 },
 				{ key: 170379, min_g: 0, max_g: 300 },
@@ -144,7 +144,7 @@ describe('buildLpModel', () => {
 				pinned_protein_g: 0,
 				pinned_fat_g: 0,
 			},
-		});
+		}));
 		expect(lp).toMatch(/macro_carb_pctdev/);
 		expect(lp).toMatch(/macro_pro_pctdev/);
 		expect(lp).toMatch(/macro_fat_pctdev/);
@@ -152,7 +152,7 @@ describe('buildLpModel', () => {
 	});
 
 	it('excludes constrained macros from ratio optimization', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [
 				{ key: 169756, min_g: 0, max_g: 400 },
 				{ key: 170379, min_g: 0, max_g: 300 },
@@ -168,7 +168,7 @@ describe('buildLpModel', () => {
 				pinned_fat_g: 0,
 			},
 			macro_constraints: [{ nutrient: 'protein', mode: 'gte', grams: 30, hard: true }],
-		});
+		}));
 		// protein should be excluded from ratio
 		expect(lp).not.toMatch(/macro_pro_pctdev/);
 		// carb and fat should still be present
@@ -177,7 +177,7 @@ describe('buildLpModel', () => {
 	});
 
 	it('includes ingredient diversity var', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [
 				{ key: 169756, min_g: 0, max_g: 400 },
 				{ key: 170379, min_g: 0, max_g: 300 },
@@ -185,14 +185,14 @@ describe('buildLpModel', () => {
 			foods: { 169756: rice, 170379: broccoli },
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
 			priorities: ['ingredient_diversity', 'total_weight'],
-		});
+		}));
 		expect(lp).toMatch(/max_gram/);
 		expect(lp).toMatch(/max_gram_g_169756/);
 		expect(lp).toMatch(/max_gram_g_170379/);
 	});
 
 	it('uses breadth strategy ordering', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [
 				{ key: 169756, min_g: 0, max_g: 400 },
 				{ key: 170379, min_g: 0, max_g: 300 },
@@ -201,18 +201,18 @@ describe('buildLpModel', () => {
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
 			micro_targets: { iron_mg: 8.0 },
 			micro_strategy: 'breadth',
-		});
+		}));
 		// Both micro_sum and worst_pct should appear in objective
 		expect(lp).toMatch(/micro_sum/);
 		expect(lp).toMatch(/worst_pct/);
 	});
 
 	it('calorie coefficients are correct', () => {
-		const lp = buildLpModel({
+		const lp = modelToLpString(buildLpModel({
 			ingredients: [{ key: 169756, min_g: 0, max_g: 400 }],
 			foods: { 169756: rice },
 			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
-		});
+		}));
 		// rice: 130 kcal/100g = 1.3 kcal/g
 		expect(lp).toMatch(/cal_lo: 1\.3 g_169756 >= 450/);
 		expect(lp).toMatch(/cal_hi: 1\.3 g_169756 <= 550/);

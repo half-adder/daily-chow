@@ -214,6 +214,7 @@ export async function solve(
 	macro_ratio: MacroRatio | null = null,
 	macro_constraints: MacroConstraint[] = [],
 	micro_strategy: 'depth' | 'breadth' = 'depth',
+	lex_tolerance: number = 0.04,
 ): Promise<SolveResponse> {
 	if (!foodsSent) {
 		throw new Error('initWorkerFoods() must be called before solve()');
@@ -251,6 +252,7 @@ export async function solve(
 		macro_constraints,
 		priorities,
 		micro_strategy,
+		lex_tolerance,
 		sex,
 		age_group,
 		optimize_nutrients,
