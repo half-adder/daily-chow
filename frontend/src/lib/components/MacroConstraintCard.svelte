@@ -86,18 +86,12 @@
 
 	<!-- Footer -->
 	<div class="mc-footer">
-		<label class="toggle-switch hard-toggle">
-			<input
-				type="checkbox"
-				checked={hard}
-				disabled={mode === 'none'}
-				onchange={(e) => toggleHard((e.target as HTMLInputElement).checked)}
-			/>
-			<span class="toggle-track hard-track">
-				<span class="toggle-thumb"></span>
-			</span>
-			<span class="toggle-label hard-label">{hard ? 'Hard' : 'Soft'}</span>
-		</label>
+		<div class="pill-group" class:disabled-pills={mode === 'none'}>
+			<button class="pill" class:active={!hard} disabled={mode === 'none'}
+				onclick={() => toggleHard(false)}>Soft</button>
+			<button class="pill" class:active={hard} disabled={mode === 'none'}
+				onclick={() => toggleHard(true)}>Hard</button>
+		</div>
 	</div>
 </div>
 
@@ -216,7 +210,7 @@
 	.mc-footer {
 		display: flex;
 		align-items: center;
-		justify-content: flex-end;
+		justify-content: center;
 	}
 
 	/* Toggle switch */
@@ -246,15 +240,6 @@
 		background: var(--accent);
 	}
 
-	.hard-track {
-		width: 36px;
-		height: 20px;
-	}
-
-	.toggle-switch input:checked ~ .hard-track {
-		background: #22c55e;
-	}
-
 	.toggle-thumb {
 		position: absolute;
 		top: 2px;
@@ -277,12 +262,45 @@
 		min-width: 22px;
 	}
 
-	.hard-label {
-		min-width: 28px;
-	}
-
 	.toggle-switch input:disabled ~ .toggle-track {
 		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	/* Hard/Soft pills */
+	.pill-group {
+		display: flex;
+		border: 1px solid var(--border-input);
+		border-radius: 6px;
+		overflow: hidden;
+	}
+
+	.pill-group.disabled-pills {
+		opacity: 0.4;
+	}
+
+	.pill {
+		background: none;
+		border: none;
+		padding: 3px 10px;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--text-muted);
+		cursor: pointer;
+		transition: background 0.15s, color 0.15s;
+		user-select: none;
+	}
+
+	.pill:not(:last-child) {
+		border-right: 1px solid var(--border-input);
+	}
+
+	.pill.active {
+		background: var(--accent);
+		color: #fff;
+	}
+
+	.pill:disabled {
 		cursor: not-allowed;
 	}
 </style>
