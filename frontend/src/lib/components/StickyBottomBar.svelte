@@ -50,7 +50,7 @@
 		display: none;
 	}
 
-	@media (max-width: 640px) {
+	@media (max-width: 768px) {
 		.sticky-bar {
 			display: flex;
 			align-items: center;

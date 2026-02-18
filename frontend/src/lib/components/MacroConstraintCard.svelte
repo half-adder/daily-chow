@@ -116,7 +116,7 @@
 		overflow: hidden;
 	}
 
-	.mc-card.disabled {
+.mc-card.disabled {
 		opacity: 0.5;
 	}
 
@@ -196,7 +196,7 @@
 		-moz-appearance: textfield;
 	}
 
-	.mc-input::-webkit-outer-spin-button,
+.mc-input::-webkit-outer-spin-button,
 	.mc-input::-webkit-inner-spin-button {
 		-webkit-appearance: none;
 		margin: 0;

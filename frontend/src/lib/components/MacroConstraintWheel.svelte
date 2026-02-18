@@ -19,7 +19,7 @@
 	let isMobile = $state(false);
 
 	$effect(() => {
-		const mql = window.matchMedia('(max-width: 640px)');
+		const mql = window.matchMedia('(max-width: 768px)');
 		isMobile = mql.matches;
 		const handler = () => { isMobile = mql.matches; };
 		mql.addEventListener('change', handler);
@@ -80,9 +80,9 @@
 	<span class="mc-label">{label}</span>
 	<div class="wheel-container" onclick={cycleMode}>
 		<div class="wheel-track" bind:this={trackEl}>
-			<span class="wheel-item">{prevSymbol()}</span>
-			<span class="wheel-item">{SYMBOLS[mode]}</span>
-			<span class="wheel-item">{nextSymbol()}</span>
+			<span class="wheel-item adjacent">{prevSymbol()}</span>
+			<span class="wheel-item active">{SYMBOLS[mode]}</span>
+			<span class="wheel-item adjacent">{nextSymbol()}</span>
 		</div>
 	</div>
 	<span
@@ -157,14 +157,23 @@
 	}
 
 	.wheel-item {
-		font-weight: 700;
 		font-size: 16px;
 		height: 20px;
 		line-height: 20px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+	}
+
+	.wheel-item.active {
+		font-weight: 700;
 		color: var(--text-primary);
+	}
+
+	.wheel-item.adjacent {
+		font-weight: 400;
+		color: var(--text-muted);
+		opacity: 0.4;
 	}
 
 	.lock-icon {
@@ -216,7 +225,7 @@
 		color: var(--text-muted);
 	}
 
-	@media (max-width: 640px) {
+	@media (max-width: 768px) {
 		.wheel-container {
 			width: 60px;
 			height: 24px;

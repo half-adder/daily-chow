@@ -51,7 +51,6 @@
 	{#each priorities as p, i (p)}
 		<div class="priority-card" data-key={p}>
 			<span class="drag-handle">⠿</span>
-			<span class="priority-card-rank">{i + 1}.</span>
 			<span class="priority-card-label">{LABELS[p] ?? p}</span>
 		</div>
 	{/each}
@@ -61,18 +60,18 @@
 	.priority-cards {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 2px;
 	}
 
 	.priority-card {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		padding: 10px 12px;
+		gap: 4px;
+		padding: 3px 5px;
 		background: var(--bg-panel);
 		border: 1px solid var(--border-input);
-		border-radius: 8px;
-		font-size: 14px;
+		border-radius: 4px;
+		font-size: 11px;
 		touch-action: none;
 		user-select: none;
 	}
@@ -80,16 +79,15 @@
 	.drag-handle {
 		cursor: grab;
 		color: var(--text-muted);
-		font-size: 18px;
+		font-size: 11px;
 		line-height: 1;
-		padding: 4px 0;
+		flex-shrink: 0;
 	}
 
-	.priority-card-rank {
-		color: var(--text-muted);
-		font-variant-numeric: tabular-nums;
-		min-width: 18px;
-		text-align: right;
+	@media (min-width: 1200px) {
+		.priority-cards { gap: 6px; }
+		.priority-card { gap: 6px; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+		.drag-handle { font-size: 14px; }
 	}
 
 	.priority-card-label {

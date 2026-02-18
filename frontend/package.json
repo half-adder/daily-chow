@@ -26,6 +26,7 @@
 	"type": "module",
 	"dependencies": {
 		"highs": "^1.8.0",
+		"lucide-svelte": "^0.574.0",
 		"sortablejs": "^1.15.7"
 	}
 }

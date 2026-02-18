@@ -7,10 +7,11 @@
 	import StackedBar from '$lib/components/StackedBar.svelte';
 	import MacroRatioBar from '$lib/components/MacroRatioBar.svelte';
 	import WelcomeModal from '$lib/components/WelcomeModal.svelte';
-	import MacroConstraintWheel from '$lib/components/MacroConstraintWheel.svelte';
 	import MacroConstraintCard from '$lib/components/MacroConstraintCard.svelte';
 	import StickyBottomBar from '$lib/components/StickyBottomBar.svelte';
 	import PriorityCards from '$lib/components/PriorityCards.svelte';
+	import CaloriesCard from '$lib/components/CaloriesCard.svelte';
+	import ProfileCard from '$lib/components/ProfileCard.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
 
 	// ── Micronutrient display info ──────────────────────────────────
@@ -77,7 +78,7 @@
 	let theme = $state<'dark' | 'light'>('dark');
 
 	// Slider scale
-	let sliderAbsMax = $state(500);
+	let sliderAbsMax = $state(1000);
 
 	// Clamp ingredient bounds when absMax changes
 	$effect(() => {
@@ -100,7 +101,10 @@
 
 	// Profile
 	let sex = $state('male');
-	let ageGroup = $state('19-30');
+	let age = $state(25);
+	const ageGroup = $derived(
+		age <= 30 ? '19-30' : age <= 50 ? '31-50' : age <= 70 ? '51-70' : '71+'
+	);
 
 	let microsOpen = $state(true);
 
@@ -366,8 +370,8 @@
 			pinnedMeals, pinnedMealsOpen,
 			calTol, carbPct, proteinPct, fatPct,
 			priorities, microStrategy, theme, ingredients,
-			sex, ageGroup,
-			microsOpen, sliderAbsMax, hasSeenWelcome: true
+			sex, age,
+			microsOpen, hasSeenWelcome: true
 		};
 		localStorage.setItem('daily-chow', JSON.stringify(state));
 	}
@@ -434,11 +438,11 @@
 				}
 			}
 			sex = s.sex ?? 'male';
-			ageGroup = s.ageGroup ?? '19-30';
+			const bandToAge: Record<string, number> = { '19-30': 25, '31-50': 40, '51-70': 60, '71+': 75 };
+			age = s.age ?? (s.ageGroup ? bandToAge[s.ageGroup] : 25) ?? 25;
 			if (s.microStrategy === 'depth' || s.microStrategy === 'breadth') microStrategy = s.microStrategy;
 			if (s.microsOpen !== undefined) microsOpen = s.microsOpen;
-			if (s.sliderAbsMax) sliderAbsMax = s.sliderAbsMax;
-		} catch { /* ignore corrupt state */ }
+			} catch { /* ignore corrupt state */ }
 	}
 
 	// ── Actions ──────────────────────────────────────────────────────
@@ -598,34 +602,21 @@
 	</header>
 
 	<section class="targets-section">
-		<div class="targets-row">
-			<div class="cal-row">
-				<span class="cal-row-label">Calories</span>
-				<input class="cal-row-input" type="number" bind:value={dailyCal} onchange={triggerSolve} />
-				<span class="cal-row-symbol">±</span>
-				<input class="cal-row-input" type="number" bind:value={calTol} onchange={triggerSolve} />
-				<span class="cal-row-unit">kcal</span>
+		<div class="cards-and-priorities">
+			<div class="profile-stack">
+				<CaloriesCard
+					calories={dailyCal}
+					oncalorieschange={(val) => { dailyCal = val; triggerSolve(); }}
+				/>
+				<ProfileCard
+					{sex}
+					{age}
+					onsexchange={(val) => { sex = val; triggerSolve(); }}
+					onagechange={(val) => { age = val; triggerSolve(); }}
+				/>
 			</div>
-			<!-- Desktop: animated wheel UI -->
-			<div class="macro-wheels">
-				{#each macroConstraints as mc, i}
-					<MacroConstraintWheel
-						label={mc.nutrient === 'carbs' ? 'Carbs' :
-						       mc.nutrient === 'protein' ? 'Protein' :
-						       mc.nutrient === 'fat' ? 'Fat' : 'Fiber'}
-						mode={mc.mode}
-						grams={mc.grams}
-						hard={mc.hard}
-						onchange={(mode, grams, hard) => {
-							macroConstraints[i] = { ...mc, mode: mode as MacroConstraint['mode'], grams, hard };
-							macroConstraints = [...macroConstraints];
-							triggerSolve();
-						}}
-					/>
-				{/each}
-			</div>
-			<!-- Mobile: card grid UI -->
-			<div class="macro-cards">
+			<div class="section-divider"></div>
+			<div class="macro-quad">
 				{#each macroConstraints as mc, i}
 					<MacroConstraintCard
 						label={mc.nutrient === 'carbs' ? 'Carbs' :
@@ -642,63 +633,32 @@
 					/>
 				{/each}
 			</div>
-			{#if isMobile}
-				<div class="priority-collapsible">
-					<button class="priority-toggle" onclick={() => { prioritiesOpen = !prioritiesOpen; }}>
-						<span class="priority-arrow" class:open={prioritiesOpen}>▸</span>
-						Solve priorities
-					</button>
-					{#if prioritiesOpen}
-						<PriorityCards {priorities} onreorder={(newOrder) => { priorities = newOrder; triggerSolve(); }} />
-					{/if}
-				</div>
-			{:else}
-				<div class="target-group priority-group">
-					<label>Solve priorities</label>
-					<div class="priority-list">
-						{#each priorities as p, i}
-							<div class="priority-row">
-								<span class="priority-rank">{i + 1}.</span>
-								<button class="priority-btn" disabled={i === 0} onclick={() => { [priorities[i - 1], priorities[i]] = [priorities[i], priorities[i - 1]]; priorities = [...priorities]; triggerSolve(); }} title="Move up">&#9650;</button>
-								<button class="priority-btn" disabled={i === priorities.length - 1} onclick={() => { [priorities[i], priorities[i + 1]] = [priorities[i + 1], priorities[i]]; priorities = [...priorities]; triggerSolve(); }} title="Move down">&#9660;</button>
-								<span class="priority-label">{p === 'micros' ? 'Micronutrient coverage' : p === 'macro_ratio' ? 'Macro ratio target' : p === 'ingredient_diversity' ? 'Ingredient diversity' : 'Minimize total weight'}</span>
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
-			<div class="target-group">
-				<label>Sex</label>
-				<div class="target-input-row">
-					<select bind:value={sex} onchange={triggerSolve}>
-						<option value="male">Male</option>
-						<option value="female">Female</option>
-					</select>
-				</div>
-			</div>
-			<div class="target-group">
-				<label>Age</label>
-				<div class="target-input-row">
-					<select bind:value={ageGroup} onchange={triggerSolve}>
-						<option value="19-30">19-30</option>
-						<option value="31-50">31-50</option>
-						<option value="51-70">51-70</option>
-						<option value="71+">71+</option>
-					</select>
-				</div>
-			</div>
-			<div class="target-group">
-				<label>Max / ingr</label>
-				<div class="target-input-row">
-					<input type="number" value={sliderAbsMax} onchange={(e) => {
-						const val = parseInt((e.target as HTMLInputElement).value);
-						if (!isNaN(val) && val > 0) sliderAbsMax = val;
-					}} />
-					<span class="unit">g</span>
+			<div class="section-divider"></div>
+			<div class="priority-sidebar">
+				<span class="priority-sidebar-label">Solve priorities</span>
+				<PriorityCards {priorities} onreorder={(newOrder) => { priorities = newOrder; triggerSolve(); }} />
+				<div class="ratio-target ratio-target-sidebar">
+					<label>Macro target</label>
+					<MacroRatioBar
+						{carbPct}
+						{proteinPct}
+						{fatPct}
+						disabledSegments={ratioDisabled}
+						onchange={(c, p, f) => { carbPct = c; proteinPct = p; fatPct = f; triggerSolve(); }}
+					/>
 				</div>
 			</div>
 		</div>
-		<div class="ratio-target">
+		<div class="priority-collapsible">
+			<button class="priority-toggle" onclick={() => { prioritiesOpen = !prioritiesOpen; }}>
+				<span class="priority-arrow" class:open={prioritiesOpen}>▸</span>
+				Solve priorities
+			</button>
+			{#if prioritiesOpen}
+				<PriorityCards {priorities} onreorder={(newOrder) => { priorities = newOrder; triggerSolve(); }} />
+			{/if}
+		</div>
+		<div class="ratio-target ratio-target-mobile">
 			<label>Macro target</label>
 			<MacroRatioBar
 				{carbPct}
@@ -1074,75 +1034,117 @@
 		background: var(--bg-panel);
 		border: 1px solid var(--border);
 		border-radius: 12px;
-		padding: 16px 20px;
+		padding: 20px 20px;
 		margin-bottom: 16px;
 	}
 
-	.targets-row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 16px;
-		align-items: end;
+	/* Mobile: flat grid, all cards flow together */
+	.cards-and-priorities {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+		gap: 10px;
 	}
 
-	/* Desktop wheels visible, mobile cards hidden */
-	.macro-wheels {
+	.profile-stack {
 		display: contents;
 	}
-	.macro-cards {
+
+	.macro-quad {
+		display: contents;
+	}
+
+	.section-divider {
 		display: none;
 	}
 
-	.cal-row {
-		display: flex;
-		align-items: center;
-		gap: 6px;
+	.priority-sidebar {
+		display: none;
 	}
 
-	.cal-row-label {
-		font-size: 12px;
+	/* Wide: three-column layout with dividers */
+	@media (min-width: 1200px) {
+		.cards-and-priorities {
+			display: flex;
+			gap: 0;
+			align-items: stretch;
+		}
+
+		.profile-stack {
+			display: flex;
+			flex-direction: column;
+			gap: 6px;
+			flex: 1 1 0;
+			min-width: 0;
+			padding-left: clamp(16px, 4vw, 64px);
+		}
+
+		.profile-stack > :global(*) {
+			flex: 1;
+		}
+
+		.macro-quad {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 6px;
+			align-content: start;
+			flex: 2 1 0;
+			min-width: 0;
+		}
+
+		.section-divider {
+			display: block;
+			width: 1px;
+			background: var(--border);
+			margin: 0 clamp(16px, 4vw, 64px);
+			flex-shrink: 0;
+		}
+
+		.priority-sidebar {
+			display: flex;
+			flex-direction: column;
+			gap: 6px;
+			flex: 1 1 0;
+			min-width: 120px;
+			padding-right: clamp(16px, 4vw, 64px);
+		}
+
+		.priority-sidebar > :global(.priority-cards) {
+			flex: 1;
+		}
+
+		.priority-sidebar > :global(.priority-cards) > :global(.priority-card) {
+			flex: 1;
+		}
+
+		.priority-collapsible {
+			display: none;
+		}
+	}
+
+	.priority-sidebar-label {
+		font-size: 11px;
+		font-weight: 600;
 		color: var(--text-muted);
-		min-width: 52px;
-		font-weight: 500;
-		text-align: right;
-	}
-
-	.cal-row-input {
-		width: 52px;
-		background: var(--bg-input);
-		color: var(--text-primary);
-		border: 1px solid var(--border-input);
-		border-radius: 4px;
-		padding: 2px 4px;
-		font-size: 13px;
-		text-align: right;
-		-moz-appearance: textfield;
-	}
-
-	.cal-row-input::-webkit-outer-spin-button,
-	.cal-row-input::-webkit-inner-spin-button {
-		-webkit-appearance: none;
-		margin: 0;
-	}
-
-	.cal-row-symbol {
-		font-weight: 700;
-		font-size: 16px;
-		color: var(--text-primary);
-		width: 24px;
-		height: 60px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.cal-row-unit {
-		font-size: 12px;
-		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
 	}
 
 	.ratio-target {
-		padding: 8px 0 0;
+		padding: 4px 0 0;
+	}
+
+	.ratio-target-sidebar {
+		display: none;
+	}
+
+	@media (min-width: 1200px) {
+		.ratio-target-sidebar {
+			display: block;
+			padding: 6px 0 0;
+		}
+		.ratio-target-mobile {
+			display: none;
+		}
 	}
 
 	.ratio-target label {
@@ -1153,100 +1155,7 @@
 		letter-spacing: 0.05em;
 		margin-bottom: 6px;
 		display: block;
-	}
-
-	.target-group {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.target-group label {
-		font-size: 11px;
-		color: var(--text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.target-input-row {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-	}
-
-	.target-group input[type='number'],
-	.target-group select {
-		padding: 6px 10px;
-		background: var(--bg-input);
-		border: 1px solid var(--border-input);
-		border-radius: 6px;
-		color: var(--text-primary);
-		font-size: 14px;
-		width: 80px;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.target-group select {
-		width: auto;
-		min-width: 100px;
-	}
-
-	.target-group input:focus,
-	.target-group select:focus {
-		border-color: #3b82f6;
-		outline: none;
-	}
-
-	.priority-group {
-		min-width: 200px;
-	}
-
-	.priority-list {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.priority-row {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		font-size: 13px;
-	}
-
-	.priority-rank {
-		width: 16px;
-		text-align: right;
-		color: var(--text-muted);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.priority-btn {
-		background: none;
-		border: 1px solid var(--border-input);
-		border-radius: 4px;
-		color: var(--text-muted);
-		cursor: pointer;
-		padding: 1px 4px;
-		font-size: 10px;
-		line-height: 1;
-	}
-
-	.priority-btn:hover:not(:disabled) {
-		color: var(--text-primary);
-		border-color: var(--text-primary);
-	}
-
-	.priority-btn:disabled {
-		opacity: 0.25;
-		cursor: default;
-	}
-
-	.priority-label {
-		color: var(--text-primary);
-	}
-
-	.priority-collapsible {
+	}	.priority-collapsible {
 		width: 100%;
 	}
 
@@ -1259,7 +1168,7 @@
 		cursor: pointer;
 		display: flex;
 		align-items: center;
-		justify-content: center;
+		justify-content: flex-start;
 		gap: 6px;
 		padding: 8px 0;
 		width: 100%;
@@ -1821,43 +1730,8 @@
 			padding: 12px 14px;
 		}
 
-		.targets-row {
-			flex-direction: column;
-			gap: 8px;
-		}
-
-		/* On mobile: hide wheels, show card grid */
-		.macro-wheels {
-			display: none;
-		}
-		.macro-cards {
-			display: grid;
+		.cards-and-priorities {
 			grid-template-columns: 1fr 1fr;
-			gap: 10px;
-			width: 100%;
-		}
-
-		.cal-row {
-			width: 100%;
-		}
-
-		.cal-row-symbol {
-			height: 24px;
-		}
-
-		.target-group {
-			flex-direction: row;
-			align-items: center;
-			gap: 8px;
-		}
-
-		.target-group label {
-			min-width: 32px;
-		}
-
-		.priority-group {
-			flex-direction: column;
-			min-width: 0;
 		}
 
 		.ingredients-header {

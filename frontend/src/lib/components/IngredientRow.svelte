@@ -446,7 +446,7 @@
 		text-align: right;
 		font-variant-numeric: tabular-nums;
 	}
-	@media (max-width: 640px) {
+	@media (max-width: 768px) {
 		.ingredient-row {
 			display: flex;
 			flex-wrap: wrap;

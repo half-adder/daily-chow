@@ -287,7 +287,7 @@
 		color: var(--text-dim);
 	}
 
-	@media (max-width: 640px) {
+	@media (max-width: 768px) {
 		.modal {
 			width: 100vw;
 			height: 100vh;
