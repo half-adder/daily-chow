@@ -192,7 +192,7 @@ export async function solve(
 			},
 			reject,
 		});
-		// Input is built from plain values above (no Svelte proxies), safe to post directly
-		w.postMessage({ type: 'solve', id, input });
+		// JSON round-trip strips Svelte 5 $state proxies (e.g. priorities, macro_constraints)
+		w.postMessage({ type: 'solve', id, input: JSON.parse(JSON.stringify(input)) });
 	});
 }
