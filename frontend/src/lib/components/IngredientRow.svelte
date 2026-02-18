@@ -169,6 +169,23 @@
 
 	{#if expanded && contribution && solved}
 		<div class="detail-panel">
+			<div class="detail-bounds">
+				<label>
+					<span>Min</span>
+					<input type="number" class="bound-input-mobile" value={minG} onchange={handleMinInput} min="0" />
+					<span class="unit">g</span>
+				</label>
+				<label>
+					<span>Max</span>
+					<input type="number" class="bound-input-mobile" value={maxG} onchange={handleMaxInput} min="0" />
+					<span class="unit">g</span>
+				</label>
+				<div class="detail-kcal-pro">
+					<span class="macro-cal">{Math.round(solved.calories_kcal)} kcal</span>
+					<span class="macro-sep">/</span>
+					<span class="macro-pro">{Math.round(solved.protein_g)}g pro</span>
+				</div>
+			</div>
 			<div class="detail-macros">
 				<h4>Macro Contribution</h4>
 				{#each [
@@ -369,6 +386,10 @@
 		background: rgba(239, 68, 68, 0.1);
 	}
 
+	.detail-bounds {
+		display: none;
+	}
+
 	/* ── Detail panel ─────────────────────────────── */
 
 	.detail-panel {
@@ -424,5 +445,101 @@
 		width: 32px;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
+	}
+	@media (max-width: 640px) {
+		.ingredient-row {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 4px 8px;
+			padding: 10px 12px 4px;
+		}
+
+		.checkbox-cell {
+			flex-shrink: 0;
+		}
+
+		.name-cell {
+			flex: 1;
+			min-width: 0;
+			flex-direction: row;
+			align-items: baseline;
+			gap: 6px;
+		}
+
+		.unit-note {
+			padding-left: 0;
+			font-size: 10px;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.bound-input {
+			display: none;
+		}
+
+		.solved-cell {
+			flex-shrink: 0;
+		}
+
+		.macros-cell {
+			display: none;
+		}
+
+		.remove-btn {
+			flex-shrink: 0;
+		}
+
+		.slider-cell {
+			width: 100%;
+			order: 10;
+			padding: 0 0 6px 32px;
+		}
+
+		.detail-panel {
+			grid-template-columns: 1fr;
+			padding: 12px 12px 16px 40px;
+		}
+
+		.detail-bounds {
+			display: flex;
+			align-items: center;
+			gap: 16px;
+			padding-bottom: 12px;
+			border-bottom: 1px solid var(--border);
+			margin-bottom: 12px;
+		}
+
+		.detail-bounds label {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			font-size: 12px;
+			color: var(--text-muted);
+		}
+
+		.bound-input-mobile {
+			width: 56px;
+			padding: 4px 6px;
+			background: var(--bg-input);
+			border: 1px solid var(--border-input);
+			border-radius: 4px;
+			color: var(--text-secondary);
+			font-size: 13px;
+			text-align: right;
+			-moz-appearance: textfield;
+		}
+
+		.bound-input-mobile::-webkit-inner-spin-button,
+		.bound-input-mobile::-webkit-outer-spin-button {
+			-webkit-appearance: none;
+		}
+
+		.detail-kcal-pro {
+			margin-left: auto;
+			font-size: 13px;
+			font-variant-numeric: tabular-nums;
+		}
 	}
 </style>
