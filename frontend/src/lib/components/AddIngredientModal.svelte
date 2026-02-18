@@ -286,4 +286,15 @@
 		text-align: center;
 		color: var(--text-dim);
 	}
+
+	@media (max-width: 640px) {
+		.modal {
+			width: 100vw;
+			height: 100vh;
+			max-width: none;
+			max-height: none;
+			border-radius: 0;
+			margin: 0;
+		}
+	}
 </style>
