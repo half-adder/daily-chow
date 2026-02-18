@@ -701,6 +701,11 @@ function getHighs() {
 	return highsPromise;
 }
 
+/** Eagerly start loading HiGHS WASM so the first solve doesn't pay init cost. */
+export function warmupHighs() {
+	getHighs();
+}
+
 /**
  * Solve a meal optimisation problem locally using HiGHS WASM.
  *

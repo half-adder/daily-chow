@@ -223,7 +223,7 @@
 
 	// ── Solver ───────────────────────────────────────────────────────
 
-	let solveTimeout: ReturnType<typeof setTimeout> | null = null;
+	let solveTimeout: number | null = null;
 	let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 	function debouncedSave() {
 		if (saveTimeout) clearTimeout(saveTimeout);
@@ -231,8 +231,8 @@
 	}
 
 	function triggerSolve() {
-		if (solveTimeout) clearTimeout(solveTimeout);
-		solveTimeout = setTimeout(doSolve, 0);
+		if (solveTimeout) cancelAnimationFrame(solveTimeout);
+		solveTimeout = requestAnimationFrame(() => doSolve());
 	}
 
 	function addPinnedMeal(meal: PinnedMeal) {
@@ -290,7 +290,7 @@
 	}
 
 	async function doSolve() {
-		const enabled = ingredients.filter((i) => i.enabled);
+		const enabled = ingredients.filter((i) => i.enabled && foods[i.key]);
 		if (enabled.length === 0) {
 			solution = {
 				status: 'infeasible', ingredients: [], meal_calories_kcal: 0, meal_protein_g: 0,

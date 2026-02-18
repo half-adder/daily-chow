@@ -1,4 +1,4 @@
-import { solveLocal, type LpModelInput } from './solver';
+import { solveLocal, warmupHighs, type LpModelInput } from './solver';
 import type { Food } from './api';
 
 type WorkerMessage =
@@ -6,6 +6,9 @@ type WorkerMessage =
 	| { type: 'solve'; id: number; input: Omit<LpModelInput, 'foods'> };
 
 let foods: Record<number, Food> = {};
+
+// Eagerly load HiGHS WASM so first solve doesn't pay the init cost
+warmupHighs();
 
 self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
 	const msg = e.data;
