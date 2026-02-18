@@ -105,12 +105,15 @@
 	.mc-card {
 		border: 1px solid var(--border-subtle, #2a2a2a);
 		border-radius: 12px;
-		padding: 10px 12px;
+		padding: 10px 10px;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 		background: var(--bg-card, #1a1a1a);
 		transition: opacity 0.15s;
+		/* Prevent grid blowout */
+		min-width: 0;
+		overflow: hidden;
 	}
 
 	.mc-card.disabled {
@@ -147,17 +150,17 @@
 	.mc-body {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
+		gap: 4px;
+		min-width: 0;
 	}
 
 	.mc-symbol {
-		font-size: 36px;
+		font-size: 32px;
 		font-weight: 700;
 		color: var(--accent, #7c6cf0);
 		cursor: pointer;
 		line-height: 1;
-		min-width: 40px;
+		flex: 0 0 auto;
 		text-align: center;
 		user-select: none;
 		-webkit-tap-highlight-color: transparent;
@@ -174,10 +177,14 @@
 		display: flex;
 		align-items: baseline;
 		gap: 2px;
+		flex: 1 1 0;
+		min-width: 0;
+		justify-content: flex-end;
 	}
 
 	.mc-input {
-		width: 64px;
+		width: 100%;
+		min-width: 0;
 		background: var(--bg-input);
 		color: var(--text-primary);
 		border: 1px solid var(--border-input);
