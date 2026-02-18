@@ -9,6 +9,7 @@
 	import WelcomeModal from '$lib/components/WelcomeModal.svelte';
 	import MacroConstraintWheel from '$lib/components/MacroConstraintWheel.svelte';
 	import StickyBottomBar from '$lib/components/StickyBottomBar.svelte';
+	import PriorityCards from '$lib/components/PriorityCards.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
 
 	// ── Micronutrient display info ──────────────────────────────────
@@ -70,6 +71,7 @@
 	let fatPct = $state(25);
 	let priorities = $state<string[]>(['micros', 'macro_ratio', 'ingredient_diversity', 'total_weight']);
 	let microStrategy = $state<'depth' | 'breadth'>('breadth');
+	let isMobile = $state(false);
 	let theme = $state<'dark' | 'light'>('dark');
 
 	// Slider scale
@@ -84,6 +86,14 @@
 			if (ing.minG > cap) { ing.minG = cap; changed = true; }
 		}
 		if (changed) triggerSolve();
+	});
+
+	$effect(() => {
+		const mql = window.matchMedia('(max-width: 640px)');
+		isMobile = mql.matches;
+		const handler = () => { isMobile = mql.matches; };
+		mql.addEventListener('change', handler);
+		return () => mql.removeEventListener('change', handler);
 	});
 
 	// Profile
@@ -611,16 +621,20 @@
 			{/each}
 			<div class="target-group priority-group">
 				<label>Solve priorities</label>
-				<div class="priority-list">
-					{#each priorities as p, i}
-						<div class="priority-row">
-							<span class="priority-rank">{i + 1}.</span>
-							<button class="priority-btn" disabled={i === 0} onclick={() => { [priorities[i - 1], priorities[i]] = [priorities[i], priorities[i - 1]]; priorities = [...priorities]; triggerSolve(); }} title="Move up">&#9650;</button>
-							<button class="priority-btn" disabled={i === priorities.length - 1} onclick={() => { [priorities[i], priorities[i + 1]] = [priorities[i + 1], priorities[i]]; priorities = [...priorities]; triggerSolve(); }} title="Move down">&#9660;</button>
-							<span class="priority-label">{p === 'micros' ? 'Micronutrient coverage' : p === 'macro_ratio' ? 'Macro ratio target' : p === 'ingredient_diversity' ? 'Ingredient diversity' : 'Minimize total weight'}</span>
-						</div>
-					{/each}
-				</div>
+				{#if isMobile}
+					<PriorityCards {priorities} onreorder={(newOrder) => { priorities = newOrder; triggerSolve(); }} />
+				{:else}
+					<div class="priority-list">
+						{#each priorities as p, i}
+							<div class="priority-row">
+								<span class="priority-rank">{i + 1}.</span>
+								<button class="priority-btn" disabled={i === 0} onclick={() => { [priorities[i - 1], priorities[i]] = [priorities[i], priorities[i - 1]]; priorities = [...priorities]; triggerSolve(); }} title="Move up">&#9650;</button>
+								<button class="priority-btn" disabled={i === priorities.length - 1} onclick={() => { [priorities[i], priorities[i + 1]] = [priorities[i + 1], priorities[i]]; priorities = [...priorities]; triggerSolve(); }} title="Move down">&#9660;</button>
+								<span class="priority-label">{p === 'micros' ? 'Micronutrient coverage' : p === 'macro_ratio' ? 'Macro ratio target' : p === 'ingredient_diversity' ? 'Ingredient diversity' : 'Minimize total weight'}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
 			</div>
 			<div class="target-group">
 				<label>Sex</label>
@@ -1727,7 +1741,7 @@
 
 	/* ── Mobile (≤640px) ─────────────────────────────── */
 
-	@media (max-width: 640px) {
+	@media (max-width: 768px) {
 		.app {
 			padding: 16px 12px 60px;
 		}
