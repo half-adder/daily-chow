@@ -863,12 +863,12 @@
 												<div class="micro-bar-rdi-tick" style="left: 50%"></div>
 											</div>
 											<span class="micro-pct" style="color: {zoneColor}">{Math.round(m.pct)}%</span>
-											<span class="micro-amounts">
-												{fmtMicro(m.total + m.pinned, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
-											</span>
 										</div>
 										{#if expandedMicro === key}
 											<div class="micro-breakdown">
+												<div class="micro-amounts">
+													{fmtMicro(m.total + m.pinned, info.unit)} / {fmtMicro(m.dri, info.unit)} {info.unit}
+												</div>
 												<div class="micro-breakdown-track">
 													<StackedBar segments={microStackedSegments(key)} height={16} />
 												</div>
@@ -1497,7 +1497,7 @@
 
 	.micro-row {
 		display: grid;
-		grid-template-columns: 100px 1fr 50px 100px;
+		grid-template-columns: 100px 1fr 50px;
 		gap: 6px;
 		align-items: center;
 		padding: 4px 0;
@@ -1514,8 +1514,8 @@
 	}
 
 	.micro-bar-track {
-		height: 8px;
-		border-radius: 2px;
+		height: 12px;
+		border-radius: 3px;
 		overflow: visible;
 		position: relative;
 		background: var(--bg-track, #e2e8f0);
@@ -1533,7 +1533,7 @@
 
 	.micro-bar-fill {
 		height: 100%;
-		border-radius: 2px;
+		border-radius: 3px;
 		transition: width 0.3s ease;
 		min-width: 2px;
 		position: relative;
@@ -1567,11 +1567,7 @@
 		font-size: 12px;
 		color: var(--text-muted);
 		font-variant-numeric: tabular-nums;
-		text-align: right;
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		padding-bottom: 4px;
 	}
 
 	/* ── Clickable / Expandable ──────────────────────── */
@@ -1607,7 +1603,7 @@
 	}
 
 	.micro-breakdown {
-		padding: 2px 0 6px;
+		padding: 0 0 6px;
 	}
 
 	.micro-breakdown-track {
@@ -1778,20 +1774,27 @@
 
 		.right-column {
 			position: fixed;
+			top: auto;
 			bottom: 0;
 			left: 0;
 			right: 0;
 			z-index: 95;
 			max-height: 70vh;
 			overflow-y: auto;
+			scrollbar-width: none;
 			transform: translateY(100%);
 			transition: transform 0.3s ease, visibility 0.3s;
 			padding: 16px;
+			padding-bottom: 52px;
 			background: var(--bg-body);
 			border-top-left-radius: 16px;
 			border-top-right-radius: 16px;
 			box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
 			visibility: hidden;
+		}
+
+		.right-column::-webkit-scrollbar {
+			display: none;
 		}
 
 		.right-column.mobile-open {
