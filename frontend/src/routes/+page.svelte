@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { fetchFoods, solve, type Food, type SolveResponse, type SolvedIngredient, type MicroResult, type PinnedMeal, type MacroConstraint } from '$lib/api';
+	import { fetchFoods, initWorkerFoods, solve, type Food, type SolveResponse, type SolvedIngredient, type MicroResult, type PinnedMeal, type MacroConstraint } from '$lib/api';
 	import IngredientRow from '$lib/components/IngredientRow.svelte';
 	import AddIngredientModal from '$lib/components/AddIngredientModal.svelte';
 	import PinnedMealModal from '$lib/components/PinnedMealModal.svelte';
@@ -330,8 +330,7 @@
 					pinned_fat_g: pinnedTotals.fat_g ?? 0
 				},
 				mealConstraints.filter(mc => mc.mode !== 'none'),
-				microStrategy,
-				foods
+				microStrategy
 			);
 		} catch (e) {
 			if (e instanceof Error && e.message === 'superseded') return;
@@ -551,7 +550,9 @@
 
 	onMount(async () => {
 		const hasState = localStorage.getItem('daily-chow');
-		foods = await fetchFoods();
+		const rawFoods = await fetchFoods();
+		initWorkerFoods(rawFoods);
+		foods = rawFoods;
 		loadState();
 		applyTheme(theme);
 		doSolve();

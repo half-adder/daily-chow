@@ -89,6 +89,7 @@ export async function fetchFoods(): Promise<Record<number, Food>> {
 // ── Web Worker solver ────────────────────────────────────────────────
 
 let worker: Worker | null = null;
+let foodsSent = false;
 let messageId = 0;
 let latestRequestId = 0;
 const pending = new Map<number, {
@@ -115,6 +116,14 @@ function getWorker(): Worker {
 	return worker;
 }
 
+/** Send foods catalog to the worker once. Call after fetchFoods(). */
+export function initWorkerFoods(foods: Record<number, Food>) {
+	const w = getWorker();
+	// foods from fetchFoods() is plain JSON (no Svelte proxy), safe to post directly
+	w.postMessage({ type: 'init', foods });
+	foodsSent = true;
+}
+
 export async function solve(
 	ingredients: SolveIngredient[],
 	targets: SolveTargets,
@@ -126,9 +135,12 @@ export async function solve(
 	macro_ratio: MacroRatio | null = null,
 	macro_constraints: MacroConstraint[] = [],
 	micro_strategy: 'depth' | 'breadth' = 'depth',
-	foods: Record<number, Food> = {},
 ): Promise<SolveResponse> {
-	// Compute micro_targets from DRI data (port of api.py lines 228-236)
+	if (!foodsSent) {
+		throw new Error('initWorkerFoods() must be called before solve()');
+	}
+
+	// Compute micro_targets from DRI data
 	const dri = DRI_TARGETS[sex]?.[age_group] ?? {};
 	const micro_targets: Record<string, number> = {};
 	for (const k of optimize_nutrients) {
@@ -140,7 +152,7 @@ export async function solve(
 		}
 	}
 
-	// Compute micro_uls from UL data (port of api.py lines 239-247)
+	// Compute micro_uls from UL data
 	const ulTable = DRI_UL[sex]?.[age_group] ?? {};
 	const micro_uls: Record<string, number> = {};
 	for (const [k, ulVal] of Object.entries(ulTable)) {
@@ -151,9 +163,8 @@ export async function solve(
 		}
 	}
 
-	const input: LpModelInput = {
+	const input: Omit<LpModelInput, 'foods'> = {
 		ingredients,
-		foods,
 		targets,
 		micro_targets: Object.keys(micro_targets).length > 0 ? micro_targets : undefined,
 		micro_uls: Object.keys(micro_uls).length > 0 ? micro_uls : undefined,
@@ -181,7 +192,7 @@ export async function solve(
 			},
 			reject,
 		});
-		// JSON round-trip strips Svelte 5 $state proxies which can't be structured-cloned
-		w.postMessage({ id, input: JSON.parse(JSON.stringify(input)) });
+		// Input is built from plain values above (no Svelte proxies), safe to post directly
+		w.postMessage({ type: 'solve', id, input });
 	});
 }
