@@ -1785,16 +1785,18 @@
 			max-height: 70vh;
 			overflow-y: auto;
 			transform: translateY(100%);
-			transition: transform 0.3s ease;
+			transition: transform 0.3s ease, visibility 0.3s;
 			padding: 16px;
 			background: var(--bg-body);
 			border-top-left-radius: 16px;
 			border-top-right-radius: 16px;
 			box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+			visibility: hidden;
 		}
 
 		.right-column.mobile-open {
 			transform: translateY(0);
+			visibility: visible;
 		}
 	}
 </style>
