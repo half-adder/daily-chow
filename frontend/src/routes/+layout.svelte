@@ -33,7 +33,7 @@
 		--text-segment: #fff;
 
 		/* Accent */
-		--accent: #7c6cf0;
+		--accent: #0d9488;
 		--accent-positive: #22c55e;
 		--accent-warning: #f59e0b;
 		--accent-danger: #ef4444;
@@ -69,7 +69,7 @@
 		--text-micro: #334155;
 		--text-segment: #fff;
 
-		--accent: #6d5ce7;
+		--accent: #0f766e;
 		--accent-positive: #16a34a;
 		--accent-warning: #d97706;
 		--accent-danger: #dc2626;
