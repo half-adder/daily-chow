@@ -8,6 +8,7 @@
 	import MacroRatioBar from '$lib/components/MacroRatioBar.svelte';
 	import WelcomeModal from '$lib/components/WelcomeModal.svelte';
 	import MacroConstraintWheel from '$lib/components/MacroConstraintWheel.svelte';
+	import StickyBottomBar from '$lib/components/StickyBottomBar.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
 
 	// ── Micronutrient display info ──────────────────────────────────
@@ -130,6 +131,7 @@
 	let expandedIngredient = $state<number | null>(null);
 	let expandedMacro = $state(false);
 	let expandedMicro = $state<string | null>(null);
+	let bottomBarExpanded = $state(false);
 
 	// Derived
 	const MACRO_KEYS = new Set(['calories_kcal', 'protein_g', 'fat_g', 'carbs_g', 'fiber_g']);
@@ -738,7 +740,7 @@
 	</div><!-- /.left-column -->
 
 	<!-- ── Right Column: Macros + Micros ──────────────────────────── -->
-	<div class="right-column">
+	<div class="right-column" class:mobile-open={bottomBarExpanded}>
 	<section class="totals-section">
 		{#if solution}
 			<div class="totals-grid">
@@ -883,6 +885,14 @@
 	{/if}
 	</div><!-- /.right-column -->
 	</div><!-- /.main-columns -->
+
+<StickyBottomBar
+    {solution}
+    {pinnedTotals}
+    {conflictReason}
+    expanded={bottomBarExpanded}
+    ontoggle={() => { bottomBarExpanded = !bottomBarExpanded; }}
+/>
 </div>
 
 {#if showAddModal}
@@ -1723,7 +1733,7 @@
 
 	@media (max-width: 640px) {
 		.app {
-			padding: 16px 12px;
+			padding: 16px 12px 60px;
 		}
 
 		h1 {
@@ -1764,6 +1774,27 @@
 
 		.ingredients-header {
 			display: none;
+		}
+
+		.right-column {
+			position: fixed;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			z-index: 95;
+			max-height: 70vh;
+			overflow-y: auto;
+			transform: translateY(100%);
+			transition: transform 0.3s ease;
+			padding: 16px;
+			background: var(--bg-body);
+			border-top-left-radius: 16px;
+			border-top-right-radius: 16px;
+			box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+		}
+
+		.right-column.mobile-open {
+			transform: translateY(0);
 		}
 	}
 </style>
