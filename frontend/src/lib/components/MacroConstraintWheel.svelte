@@ -16,6 +16,15 @@
 
 	let animating = $state(false);
 	let trackEl = $state<HTMLDivElement | null>(null);
+	let isMobile = $state(false);
+
+	$effect(() => {
+		const mql = window.matchMedia('(max-width: 640px)');
+		isMobile = mql.matches;
+		const handler = () => { isMobile = mql.matches; };
+		mql.addEventListener('change', handler);
+		return () => mql.removeEventListener('change', handler);
+	});
 
 	function currentIndex(): number {
 		return MODES.indexOf(mode);
@@ -37,7 +46,7 @@
 
 		// Instantly position new items shifted down (no transition)
 		trackEl.style.transition = 'none';
-		trackEl.style.transform = 'translateY(20px)';
+		trackEl.style.transform = isMobile ? 'translateX(-20px)' : 'translateY(20px)';
 
 		// Change mode — new items render
 		onchange(MODES[nextIdx], grams, hard);
@@ -205,5 +214,23 @@
 	.mc-unit {
 		font-size: 12px;
 		color: var(--text-muted);
+	}
+
+	@media (max-width: 640px) {
+		.wheel-container {
+			width: 60px;
+			height: 24px;
+			-webkit-mask-image: linear-gradient(to right, transparent 0%, black 25%, black 75%, transparent 100%);
+			mask-image: linear-gradient(to right, transparent 0%, black 25%, black 75%, transparent 100%);
+		}
+
+		.wheel-track {
+			flex-direction: row;
+		}
+
+		.wheel-item {
+			width: 20px;
+			height: 24px;
+		}
 	}
 </style>
