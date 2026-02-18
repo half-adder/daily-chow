@@ -8,6 +8,7 @@
 	import MacroRatioBar from '$lib/components/MacroRatioBar.svelte';
 	import WelcomeModal from '$lib/components/WelcomeModal.svelte';
 	import MacroConstraintWheel from '$lib/components/MacroConstraintWheel.svelte';
+	import MacroConstraintCard from '$lib/components/MacroConstraintCard.svelte';
 	import StickyBottomBar from '$lib/components/StickyBottomBar.svelte';
 	import PriorityCards from '$lib/components/PriorityCards.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
@@ -605,21 +606,42 @@
 				<input class="cal-row-input" type="number" bind:value={calTol} onchange={triggerSolve} />
 				<span class="cal-row-unit">kcal</span>
 			</div>
-			{#each macroConstraints as mc, i}
-				<MacroConstraintWheel
-					label={mc.nutrient === 'carbs' ? 'Carbs' :
-					       mc.nutrient === 'protein' ? 'Protein' :
-					       mc.nutrient === 'fat' ? 'Fat' : 'Fiber'}
-					mode={mc.mode}
-					grams={mc.grams}
-					hard={mc.hard}
-					onchange={(mode, grams, hard) => {
-						macroConstraints[i] = { ...mc, mode: mode as MacroConstraint['mode'], grams, hard };
-						macroConstraints = [...macroConstraints];
-						triggerSolve();
-					}}
-				/>
-			{/each}
+			<!-- Desktop: animated wheel UI -->
+			<div class="macro-wheels">
+				{#each macroConstraints as mc, i}
+					<MacroConstraintWheel
+						label={mc.nutrient === 'carbs' ? 'Carbs' :
+						       mc.nutrient === 'protein' ? 'Protein' :
+						       mc.nutrient === 'fat' ? 'Fat' : 'Fiber'}
+						mode={mc.mode}
+						grams={mc.grams}
+						hard={mc.hard}
+						onchange={(mode, grams, hard) => {
+							macroConstraints[i] = { ...mc, mode: mode as MacroConstraint['mode'], grams, hard };
+							macroConstraints = [...macroConstraints];
+							triggerSolve();
+						}}
+					/>
+				{/each}
+			</div>
+			<!-- Mobile: card grid UI -->
+			<div class="macro-cards">
+				{#each macroConstraints as mc, i}
+					<MacroConstraintCard
+						label={mc.nutrient === 'carbs' ? 'Carbs' :
+						       mc.nutrient === 'protein' ? 'Protein' :
+						       mc.nutrient === 'fat' ? 'Fat' : 'Fiber'}
+						mode={mc.mode}
+						grams={mc.grams}
+						hard={mc.hard}
+						onchange={(mode, grams, hard) => {
+							macroConstraints[i] = { ...mc, mode: mode as MacroConstraint['mode'], grams, hard };
+							macroConstraints = [...macroConstraints];
+							triggerSolve();
+						}}
+					/>
+				{/each}
+			</div>
 			{#if isMobile}
 				<div class="priority-collapsible">
 					<button class="priority-toggle" onclick={() => { prioritiesOpen = !prioritiesOpen; }}>
@@ -1062,6 +1084,14 @@
 		flex-wrap: wrap;
 		gap: 16px;
 		align-items: end;
+	}
+
+	/* Desktop wheels visible, mobile cards hidden */
+	.macro-wheels {
+		display: contents;
+	}
+	.macro-cards {
+		display: none;
 	}
 
 	.cal-row {
@@ -1795,6 +1825,17 @@
 		.targets-row {
 			flex-direction: column;
 			gap: 8px;
+		}
+
+		/* On mobile: hide wheels, show card grid */
+		.macro-wheels {
+			display: none;
+		}
+		.macro-cards {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 10px;
+			width: 100%;
 		}
 
 		.cal-row {
