@@ -25,10 +25,21 @@
 			ghostClass: 'priority-card-ghost',
 			chosenClass: 'priority-card-chosen',
 			dragClass: 'priority-card-drag',
-			onEnd: () => {
+			onEnd: (evt) => {
 				const newOrder = Array.from(listEl!.children).map(
 					(el) => (el as HTMLElement).dataset.key!
 				);
+				// Revert SortableJS DOM mutation so Svelte can reconcile cleanly
+				if (evt.oldIndex !== undefined && evt.newIndex !== undefined && evt.item.parentNode) {
+					const parent = evt.item.parentNode;
+					parent.removeChild(evt.item);
+					const ref = parent.children[evt.oldIndex];
+					if (ref) {
+						parent.insertBefore(evt.item, ref);
+					} else {
+						parent.appendChild(evt.item);
+					}
+				}
 				onreorder(newOrder);
 			}
 		});
