@@ -19,8 +19,10 @@
 	}
 
 	function formatGrams(g: number): string {
-		if (g >= 1000) return `${(g / 1000).toFixed(1)}kg`;
-		return `${Math.round(g)}g`;
+		const lbs = g / 453.592;
+		if (lbs >= 1) return `${lbs.toFixed(1)} lb`;
+		const oz = lbs * 16;
+		return `${Math.round(oz)} oz`;
 	}
 
 	function formatQty(totalGrams: number, portion: { unit: string; g: number } | undefined): { qty: string; unit: string } {
