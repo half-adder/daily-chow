@@ -68,7 +68,29 @@
 		return flags;
 	});
 
-	let results = $derived.by(() => {
+	interface FoodGroup {
+		groupKey: string;
+		representative: [string, Food];
+		variants: [string, Food][];
+	}
+
+	let expandedGroups = $state(new Set<string>());
+
+	function toggleGroup(groupKey: string, e: Event) {
+		e.stopPropagation();
+		if (expandedGroups.has(groupKey)) {
+			expandedGroups.delete(groupKey);
+		} else {
+			expandedGroups.add(groupKey);
+		}
+		expandedGroups = new Set(expandedGroups);
+	}
+
+	function computeScore(key: string, food: Food): number {
+		return (food.commonness ?? 3) + (gapScores.get(key) ?? 0);
+	}
+
+	let groupedResults = $derived.by(() => {
 		const q = debouncedQuery.toLowerCase().trim();
 		let entries = Object.entries(foods).filter(([k]) => !existingKeys.has(Number(k)));
 
@@ -82,30 +104,43 @@
 					const aStarts = a.name.toLowerCase().startsWith(q) ? 0 : 1;
 					const bStarts = b.name.toLowerCase().startsWith(q) ? 0 : 1;
 					if (aStarts !== bStarts) return aStarts - bStarts;
-					const ac = a.commonness ?? 3;
-					const bc = b.commonness ?? 3;
-					if (ac !== bc) return bc - ac;
-					if (hasMicroData) {
-						return (gapScores.get(kb) ?? 0) - (gapScores.get(ka) ?? 0);
-					}
-					return 0;
+					return computeScore(kb, b) - computeScore(ka, a);
 				});
 		} else {
 			entries = entries.sort(([ka, a], [kb, b]) => {
 				const aSimilar = similarFlags.get(ka) ? 1 : 0;
 				const bSimilar = similarFlags.get(kb) ? 1 : 0;
 				if (aSimilar !== bSimilar) return aSimilar - bSimilar;
-				const ac = a.commonness ?? 3;
-				const bc = b.commonness ?? 3;
-				if (ac !== bc) return bc - ac;
-				if (hasMicroData) {
-					return (gapScores.get(kb) ?? 0) - (gapScores.get(ka) ?? 0);
-				}
-				return 0;
+				return computeScore(kb, b) - computeScore(ka, a);
 			});
 		}
 
-		return entries;
+		// Group by food.group — entries are already sorted by score,
+		// so the first entry per group is the representative.
+		const groupMap = new Map<string, { representative: [string, Food]; variants: [string, Food][] }>();
+		for (const entry of entries) {
+			const [, food] = entry;
+			const gk = food.group.toLowerCase();
+			const existing = groupMap.get(gk);
+			if (!existing) {
+				groupMap.set(gk, { representative: entry, variants: [] });
+			} else {
+				existing.variants.push(entry);
+			}
+		}
+
+		// Preserve order from sorted entries
+		const groups: FoodGroup[] = [];
+		const seen = new Set<string>();
+		for (const entry of entries) {
+			const gk = entry[1].group.toLowerCase();
+			if (seen.has(gk)) continue;
+			seen.add(gk);
+			const g = groupMap.get(gk)!;
+			groups.push({ groupKey: gk, representative: g.representative, variants: g.variants });
+		}
+
+		return groups;
 	});
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -121,7 +156,7 @@
 	<div class="modal" onclick={(e) => e.stopPropagation()}>
 		<div class="modal-header">
 			<h3>Add Ingredient</h3>
-			<button class="close-btn" onclick={onclose}>×</button>
+			<button class="close-btn" onclick={onclose}>&times;</button>
 		</div>
 
 		<input
@@ -134,21 +169,60 @@
 		/>
 
 		<div class="results">
-			{#each results as [key, food]}
+			{#each groupedResults as { groupKey, representative, variants }}
+				{@const [key, food] = representative}
 				{@const gaps = hasMicroData ? countGapsFilled(food, microResults, estimateServingG(food)) : 0}
-				<button class="result-item" onclick={() => onselect(Number(key))}>
-					<span class="result-name">{food.name}</span>
-					<span class="result-note">{food.subtitle}</span>
-					<span class="result-macros">
-						{food.calories_kcal_per_100g} kcal · {food.protein_g_per_100g}g pro · {food.fiber_g_per_100g}g fiber
-					</span>
-					<span class="result-meta">
-						{#if gaps > 0}
-							<span class="result-gaps">fills {gaps} gap{gaps !== 1 ? 's' : ''}</span>
-						{/if}
-						<span class="result-category">{food.category}</span>
-					</span>
-				</button>
+				<div class="group-row">
+					<button class="result-item" onclick={() => onselect(Number(key))}>
+						<span class="result-name">
+							{food.name}
+							{#if variants.length > 0}
+								<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+								<span
+									class="variant-toggle"
+									onclick={(e) => toggleGroup(groupKey, e)}
+									role="button"
+									tabindex="0"
+								>
+									{#if expandedGroups.has(groupKey)}
+										&minus;{variants.length} more
+									{:else}
+										+{variants.length} more
+									{/if}
+								</span>
+							{/if}
+						</span>
+						<span class="result-note">{food.subtitle}</span>
+						<span class="result-macros">
+							{food.calories_kcal_per_100g} kcal &middot; {food.protein_g_per_100g}g pro &middot; {food.fiber_g_per_100g}g fiber
+						</span>
+						<span class="result-meta">
+							{#if gaps > 0}
+								<span class="result-gaps">fills {gaps} gap{gaps !== 1 ? 's' : ''}</span>
+							{/if}
+							<span class="result-category">{food.category}</span>
+						</span>
+					</button>
+				</div>
+
+				{#if expandedGroups.has(groupKey)}
+					{#each variants as [vKey, vFood]}
+						{@const vGaps = hasMicroData ? countGapsFilled(vFood, microResults, estimateServingG(vFood)) : 0}
+						<button class="result-item variant-item" onclick={() => onselect(Number(vKey))}>
+							<span class="result-name">{vFood.name}</span>
+							<span class="result-note">{vFood.subtitle}</span>
+							<span class="result-macros">
+								{vFood.calories_kcal_per_100g} kcal &middot; {vFood.protein_g_per_100g}g pro &middot; {vFood.fiber_g_per_100g}g fiber
+							</span>
+							<span class="result-meta">
+								{#if vGaps > 0}
+									<span class="result-gaps">fills {vGaps} gap{vGaps !== 1 ? 's' : ''}</span>
+								{/if}
+								<span class="result-category">{vFood.category}</span>
+							</span>
+						</button>
+					{/each}
+				{/if}
 			{:else}
 				<div class="no-results">No matching foods</div>
 			{/each}
@@ -226,6 +300,10 @@
 		flex: 1;
 	}
 
+	.group-row {
+		position: relative;
+	}
+
 	.result-item {
 		display: grid;
 		grid-template-columns: 1fr auto;
@@ -245,8 +323,39 @@
 		background: var(--bg-hover);
 	}
 
+	.variant-item {
+		padding-left: 28px;
+		opacity: 0.75;
+	}
+
+	.variant-item:hover {
+		opacity: 1;
+	}
+
+	.variant-toggle {
+		display: inline-flex;
+		align-items: center;
+		margin-left: 6px;
+		padding: 1px 8px;
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		border-radius: 10px;
+		cursor: pointer;
+		vertical-align: middle;
+		user-select: none;
+	}
+
+	.variant-toggle:hover {
+		background: color-mix(in srgb, var(--accent) 22%, transparent);
+	}
+
 	.result-name {
 		font-weight: 500;
+		display: flex;
+		align-items: center;
+		gap: 0;
 	}
 
 	.result-note {

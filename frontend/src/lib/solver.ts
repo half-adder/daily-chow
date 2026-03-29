@@ -347,6 +347,43 @@ export function buildLpModel(input: LpModelInput): LpModelComponents {
 		hasMicroSum = true;
 	}
 
+	// ── Depth-mode: filtered worst_pct ──────────────────────────────
+	// Depth uses minimax (worst_pct) but only over "reachable" nutrients —
+	// those where max achievable coverage exceeds 50%. This prevents
+	// immovable bottlenecks (like vitamin D with no food sources) from
+	// dominating the minimax and making all nutrients equally bad.
+	let hasDepthWorstPct = false;
+	let maxDepthWorstPct = 0;
+
+	if (pctShortVars.length > 0 && micro_strategy === 'depth' && micro_targets) {
+		const depthPctVars: string[] = [];
+
+		for (const [key, targetVal] of Object.entries(micro_targets)) {
+			if (targetVal <= 0) continue;
+			const sKey = sanitize(key);
+			// Compute max achievable nutrient from all ingredients at max_g
+			let maxAchievable = 0;
+			for (const ing of ingredients) {
+				const food = foods[ing.key];
+				maxAchievable += ing.max_g * microPerG(food, key);
+			}
+			const maxCoverage = maxAchievable / targetVal;
+			// Only include in depth minimax if >50% coverage is possible
+			if (maxCoverage > 0.5) {
+				depthPctVars.push(`${sKey}_pct`);
+			}
+		}
+
+		if (depthPctVars.length > 0) {
+			addBound(0, 'depth_worst_pct', 1);
+			for (const ps of depthPctVars) {
+				constraints.push(` depth_worst_pct_${ps}: depth_worst_pct - ${ps} >= 0`);
+			}
+			hasDepthWorstPct = true;
+			maxDepthWorstPct = 1;
+		}
+	}
+
 	// ── UL proximity penalty ────────────────────────────────────────
 	let hasWorstUlProx = false;
 	let maxWorstUlProx = 0;
@@ -571,40 +608,43 @@ export function buildLpModel(input: LpModelInput): LpModelComponents {
 	const lexLevels: LexTerm[][] = [];
 
 	for (const p of priorities) {
-		const level: LexTerm[] = [];
 		if (p === PRIORITY_MICROS) {
+			// Each micro sub-objective gets its own lex level for true
+			// strict priority via multi-pass pinning (no weighted-sum compromise).
 			if (micro_strategy === 'breadth') {
+				// Breadth: minimize total shortfall first, then worst-case
 				if (hasMicroSum && maxMicroPctSum > 0) {
-					level.push({ varName: 'micro_sum', maxVal: maxMicroPctSum });
+					lexLevels.push([{ varName: 'micro_sum', maxVal: maxMicroPctSum }]);
 				}
 				if (hasWorstPct && maxWorstPct > 0) {
-					level.push({ varName: 'worst_pct', maxVal: maxWorstPct });
+					lexLevels.push([{ varName: 'worst_pct', maxVal: maxWorstPct }]);
 				}
 			} else {
-				if (hasWorstPct && maxWorstPct > 0) {
-					level.push({ varName: 'worst_pct', maxVal: maxWorstPct });
+				// Depth: minimize the worst reachable nutrient (filtered minimax),
+				// then total shortfall as tiebreaker.
+				if (hasDepthWorstPct && maxDepthWorstPct > 0) {
+					lexLevels.push([{ varName: 'depth_worst_pct', maxVal: maxDepthWorstPct }]);
 				}
 				if (hasMicroSum && maxMicroPctSum > 0) {
-					level.push({ varName: 'micro_sum', maxVal: maxMicroPctSum });
+					lexLevels.push([{ varName: 'micro_sum', maxVal: maxMicroPctSum }]);
 				}
 			}
 			// UL proximity is a tiebreaker: avoid being near upper limits,
 			// but only after maximizing DRI coverage
 			if (hasWorstUlProx && maxWorstUlProx > 0) {
-				level.push({ varName: 'worst_ul_prox', maxVal: maxWorstUlProx });
+				lexLevels.push([{ varName: 'worst_ul_prox', maxVal: maxWorstUlProx }]);
 			}
 		} else if (p === PRIORITY_MACRO_RATIO) {
 			if (hasCombinedMacro && combinedMacroVar && maxCombinedMacro > 0) {
-				level.push({ varName: combinedMacroVar, maxVal: maxCombinedMacro });
+				lexLevels.push([{ varName: combinedMacroVar, maxVal: maxCombinedMacro }]);
 			}
 		} else if (p === PRIORITY_INGREDIENT_DIVERSITY) {
 			if (hasDiversity && maxDiversity > 0) {
-				level.push({ varName: 'max_gram', maxVal: maxDiversity });
+				lexLevels.push([{ varName: 'max_gram', maxVal: maxDiversity }]);
 			}
 		} else if (p === PRIORITY_TOTAL_WEIGHT) {
-			level.push({ varName: '__total_weight__', maxVal: maxTotal });
+			lexLevels.push([{ varName: '__total_weight__', maxVal: maxTotal }]);
 		}
-		if (level.length > 0) lexLevels.push(level);
 	}
 
 	// Fallback: if no terms, minimize total weight

@@ -13,7 +13,9 @@ export interface Food {
 	fiber_g_per_100g: number;
 	category: string;
 	commonness: number;
+	group: string;
 	micros: Record<string, number>;
+	portion?: { unit: string; g: number };
 }
 
 export interface SolveIngredient {
@@ -129,13 +131,14 @@ function transformFood(entry: RawFood): Food {
 		const key = USDA_ID_TO_MICRO[Number(uid)];
 		if (key) micros[key] = amount;
 	}
-	return {
+	const food: Food = {
 		fdc_id: entry.fdc_id,
 		name: entry.name,
 		subtitle: entry.subtitle ?? '',
 		usda_description: entry.usda_description ?? entry.name,
 		category: entry.category ?? '',
 		commonness: entry.commonness ?? 3,
+		group: entry.group ?? entry.name,
 		calories_kcal_per_100g: extractMacro(n, MACRO_USDA_IDS.calories_kcal),
 		protein_g_per_100g: extractMacro(n, MACRO_USDA_IDS.protein_g),
 		fat_g_per_100g: extractMacro(n, MACRO_USDA_IDS.fat_g),
@@ -143,6 +146,10 @@ function transformFood(entry: RawFood): Food {
 		fiber_g_per_100g: extractMacro(n, MACRO_USDA_IDS.fiber_g),
 		micros,
 	};
+	if (entry.portion) {
+		food.portion = entry.portion;
+	}
+	return food;
 }
 
 interface RawFood {
@@ -152,7 +159,9 @@ interface RawFood {
 	usda_description?: string;
 	category?: string;
 	commonness?: number;
+	group?: string;
 	nutrients: Record<string, number>;
+	portion?: { unit: string; g: number };
 }
 
 export async function fetchFoods(): Promise<Record<number, Food>> {

@@ -12,6 +12,7 @@
 	import PriorityCards from '$lib/components/PriorityCards.svelte';
 	import CaloriesCard from '$lib/components/CaloriesCard.svelte';
 	import ProfileCard from '$lib/components/ProfileCard.svelte';
+	import GroceryListModal from '$lib/components/GroceryListModal.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
 
 	// ── Micronutrient display info ──────────────────────────────────
@@ -143,6 +144,8 @@
 	let showPinnedModal = $state(false);
 	let editingPinnedMeal = $state<PinnedMeal | null>(null);
 	let showWelcome = $state(false);
+	let showGroceryList = $state(false);
+	let groceryDays = $state(7);
 
 	// Expand states
 	let expandedIngredient = $state<number | null>(null);
@@ -585,6 +588,23 @@
 		<div class="header-row">
 			<h1>Daily Chow</h1>
 			<div class="header-controls">
+				<div class="grocery-controls">
+					<label class="days-input">
+						<input type="number" min="1" max="30" bind:value={groceryDays} />
+						<span>days</span>
+					</label>
+					<button
+						class="grocery-btn"
+						onclick={() => (showGroceryList = true)}
+						disabled={!solution || solution.status !== 'optimal'}
+						title="Grocery list"
+					>
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/>
+							<path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>
+						</svg>
+					</button>
+				</div>
 				<button class="help-btn" onclick={() => (showWelcome = true)} title="How to use">?</button>
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<div class="theme-switch" onclick={toggleTheme} title="Toggle light/dark mode">
@@ -947,6 +967,15 @@
 	<WelcomeModal onclose={dismissWelcome} />
 {/if}
 
+{#if showGroceryList && solution && solution.status === 'optimal'}
+	<GroceryListModal
+		ingredients={solution.ingredients}
+		{foods}
+		days={groceryDays}
+		onclose={() => (showGroceryList = false)}
+	/>
+{/if}
+
 <style>
 	:global(body) {
 		margin: 0;
@@ -1002,6 +1031,62 @@
 	.help-btn:hover {
 		color: var(--text-primary);
 		border-color: var(--text-muted);
+	}
+
+	.grocery-controls {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.days-input {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 12px;
+		color: var(--text-muted);
+	}
+
+	.days-input input {
+		width: 36px;
+		padding: 3px 4px;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-panel);
+		color: var(--text-primary);
+		font-size: 12px;
+		text-align: center;
+		-moz-appearance: textfield;
+	}
+
+	.days-input input::-webkit-inner-spin-button,
+	.days-input input::-webkit-outer-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+
+	.grocery-btn {
+		width: 28px;
+		height: 28px;
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		background: none;
+		color: var(--text-muted);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+	}
+
+	.grocery-btn:hover:not(:disabled) {
+		color: var(--text-primary);
+		border-color: var(--text-muted);
+	}
+
+	.grocery-btn:disabled {
+		opacity: 0.3;
+		cursor: not-allowed;
 	}
 
 	.theme-switch {

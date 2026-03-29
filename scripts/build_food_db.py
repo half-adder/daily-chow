@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["rich"]
+# ///
 """Build the unified food database from USDA FoodData Central exports.
 
 Merges Foundation Foods (preferred) and SR Legacy (fallback) by NDB number,
@@ -5,7 +9,7 @@ extracts tracked nutrients, generates short names via Claude Code headless
 mode (claude -p --model haiku), and outputs a compact JSON file for the app.
 
 Usage:
-    uv run scripts/build_food_db.py [--skip-names] [--skip-commonness]
+    uv run scripts/build_food_db.py [--skip-names] [--skip-commonness] [--skip-groups]
 
 Expects raw USDA JSON files in ~/Downloads/:
     - FoodData_Central_foundation_food_json_2025-12-18.json
@@ -18,7 +22,14 @@ import argparse
 import json
 import re
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+from rich.console import Console
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, TimeRemainingColumn, MofNCompleteColumn
+
+console = Console()
 
 # -- Paths -----------------------------------------------------------------
 DOWNLOADS = Path.home() / "Downloads"
@@ -27,6 +38,8 @@ SR_LEGACY_PATH = DOWNLOADS / "FoodData_Central_sr_legacy_food_json_2018-04.json"
 OUTPUT = Path(__file__).resolve().parent.parent / "src" / "daily_chow" / "data" / "foods.json"
 NAME_CACHE_PATH = Path(__file__).resolve().parent.parent / "src" / "daily_chow" / "data" / "name_cache.json"
 COMMONNESS_CACHE_PATH = Path(__file__).resolve().parent.parent / "src" / "daily_chow" / "data" / "commonness_cache.json"
+GROUP_CACHE_PATH = Path(__file__).resolve().parent.parent / "src" / "daily_chow" / "data" / "group_cache.json"
+PORTION_CACHE_PATH = Path(__file__).resolve().parent.parent / "src" / "daily_chow" / "data" / "portion_cache.json"
 
 # -- Nutrient IDs to keep --------------------------------------------------
 KEEP_NUTRIENT_IDS: set[int] = {
@@ -118,15 +131,35 @@ def _extract_nutrients(food_nutrients: list[dict]) -> dict[str, float]:
     return nutrients
 
 
+def _extract_portions(food_portions: list[dict]) -> list[dict]:
+    """Extract portion data from a USDA foodPortions array."""
+    portions: list[dict] = []
+    for fp in food_portions:
+        modifier = fp.get("modifier", "")
+        gram_weight = fp.get("gramWeight")
+        amount = fp.get("amount")
+        if modifier and gram_weight and amount:
+            portions.append({
+                "amount": amount,
+                "modifier": modifier,
+                "g": gram_weight,
+            })
+    return portions
+
+
 def _parse_food(food: dict) -> dict:
     """Parse a single USDA food entry into our compact format."""
-    return {
+    parsed = {
         "fdc_id": food["fdcId"],
         "ndb_number": food.get("ndbNumber"),
         "description": food["description"],
         "category": food.get("foodCategory", {}).get("description", ""),
         "nutrients": _extract_nutrients(food.get("foodNutrients", [])),
     }
+    portions = _extract_portions(food.get("foodPortions", []))
+    if portions:
+        parsed["portions"] = portions
+    return parsed
 
 
 def load_foundation(path: Path) -> dict[int, dict]:
@@ -190,13 +223,16 @@ def merge_foods(foundation: dict[int, dict], sr_legacy: dict[int, dict]) -> dict
     backfill_foods = 0
     backfill_nutrients = 0
 
-    # Start with all Foundation foods, backfilling missing nutrients from SR Legacy
+    # Start with all Foundation foods, backfilling missing nutrients and portions from SR Legacy
     for ndb, food in foundation.items():
         if ndb in sr_legacy:
             added = _backfill_nutrients(food, sr_legacy[ndb])
             if added:
                 backfill_foods += 1
                 backfill_nutrients += added
+            # Backfill portions from SR Legacy (Foundation portions are mostly RACC)
+            if "portions" not in food and "portions" in sr_legacy[ndb]:
+                food["portions"] = sr_legacy[ndb]["portions"]
         merged[food["fdc_id"]] = food
         foundation_kept += 1
 
@@ -229,12 +265,15 @@ def merge_foods(foundation: dict[int, dict], sr_legacy: dict[int, dict]) -> dict
 
 def _call_haiku(prompt: str) -> str:
     """Call Claude Haiku via Claude Code headless mode."""
+    import os
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
     result = subprocess.run(
         ["claude", "-p", "--model", "haiku"],
         input=prompt,
         capture_output=True,
         text=True,
         timeout=120,
+        env=env,
     )
     if result.returncode != 0:
         raise RuntimeError(f"claude CLI failed: {result.stderr}")
@@ -275,7 +314,6 @@ def generate_names(foods: dict[int, dict], cache_path: Path, skip: bool = False)
 
     Returns dict keyed by fdc_id (str) -> {"name": ..., "subtitle": ...}
     """
-    # Load existing cache
     cache: dict[str, dict[str, str]] = {}
     if cache_path.exists():
         with open(cache_path) as f:
@@ -283,15 +321,12 @@ def generate_names(foods: dict[int, dict], cache_path: Path, skip: bool = False)
         print(f"\n  Name cache: {len(cache)} entries loaded")
 
     if skip:
-        # Fill missing entries with simple fallback
         for fdc_id, food in foods.items():
             key = str(fdc_id)
             if key not in cache:
-                desc = food["description"]
-                cache[key] = {"name": desc, "subtitle": ""}
+                cache[key] = {"name": food["description"], "subtitle": ""}
         return cache
 
-    # Find foods that need names
     needs_names: list[tuple[int, str]] = []
     for fdc_id, food in foods.items():
         if str(fdc_id) not in cache:
@@ -304,14 +339,15 @@ def generate_names(foods: dict[int, dict], cache_path: Path, skip: bool = False)
     print(f"  Generating names for {len(needs_names)} foods via Haiku...")
 
     batch_size = 50
+    max_workers = 10
+    lock = threading.Lock()
     processed = 0
+    errors = 0
 
-    for i in range(0, len(needs_names), batch_size):
-        batch = needs_names[i : i + batch_size]
+    def _make_prompt(batch: list[tuple[int, str]]) -> str:
         lines = [f"{fdc_id}|{desc}" for fdc_id, desc in batch]
         prompt_text = "\n".join(lines)
-
-        prompt = f"""For each USDA food description below, generate a short display name and subtitle.
+        return f"""For each USDA food description below, generate a short display name and subtitle.
 
 Rules:
 - The name should be natural English, not inverted USDA style (e.g. "Avocado oil" not "Oil, avocado")
@@ -325,38 +361,74 @@ Respond with ONLY a JSON array of objects, one per input line, in the same order
 Input (fdc_id|description):
 {prompt_text}"""
 
+    batches = [needs_names[i : i + batch_size] for i in range(0, len(needs_names), batch_size)]
+
+    def _process_batch(
+        batch: list[tuple[int, str]],
+        progress: Progress,
+        task_id: int,
+    ) -> None:
+        nonlocal processed, errors
+        prompt = _make_prompt(batch)
+
         try:
             response_text = _call_haiku(prompt)
         except (RuntimeError, subprocess.TimeoutExpired) as e:
-            print(f"  WARNING: Haiku call failed for batch {i // batch_size + 1}: {e}")
-            for fdc_id, desc in batch:
-                if str(fdc_id) not in cache:
-                    cache[str(fdc_id)] = {"name": desc, "subtitle": ""}
-            processed += len(batch)
-            continue
+            with lock:
+                errors += 1
+                for fdc_id, desc in batch:
+                    if str(fdc_id) not in cache:
+                        cache[str(fdc_id)] = {"name": desc, "subtitle": ""}
+                processed += len(batch)
+                progress.update(task_id, advance=len(batch), description=f"[red]Error: {e!s:.40s}")
+            return
 
         extracted = _extract_json(response_text)
-        try:
-            results = json.loads(extracted)
-            for item in results:
-                cache[str(item["fdc_id"])] = {
-                    "name": item["name"],
-                    "subtitle": item.get("subtitle", ""),
-                }
-        except (json.JSONDecodeError, KeyError) as e:
-            print(f"  WARNING: Failed to parse batch {i // batch_size + 1}: {e}")
-            # Fall back to raw descriptions for this batch
-            for fdc_id, desc in batch:
-                if str(fdc_id) not in cache:
-                    cache[str(fdc_id)] = {"name": desc, "subtitle": ""}
+        with lock:
+            try:
+                results = json.loads(extracted)
+                sample_name = None
+                for item in results:
+                    cache[str(item["fdc_id"])] = {
+                        "name": item["name"],
+                        "subtitle": item.get("subtitle", ""),
+                    }
+                    if sample_name is None:
+                        sample_name = item["name"]
+                progress.update(task_id, advance=len(batch), description=f"[cyan]{sample_name}" if sample_name else "OK")
+            except (json.JSONDecodeError, KeyError):
+                errors += 1
+                for fdc_id, desc in batch:
+                    if str(fdc_id) not in cache:
+                        cache[str(fdc_id)] = {"name": desc, "subtitle": ""}
+                progress.update(task_id, advance=len(batch), description="[red]Parse error")
 
-        processed += len(batch)
-        if processed % 500 == 0 or processed == len(needs_names):
-            print(f"    {processed}/{len(needs_names)} done")
+            processed += len(batch)
+            if processed % (batch_size * 50) == 0 or processed == len(needs_names):
+                with open(cache_path, "w") as f:
+                    json.dump(cache, f, indent=2)
 
-        # Save cache after each batch (resume-friendly)
-        with open(cache_path, "w") as f:
-            json.dump(cache, f, indent=2)
+    console.print(f"  Running [bold]{len(batches)}[/bold] batches with [bold]{max_workers}[/bold] parallel workers")
+    with Progress(
+        TextColumn("[progress.description]{task.description}", justify="right"),
+        BarColumn(bar_width=40),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("Starting...", total=len(needs_names))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_process_batch, batch, progress, task_id): idx for idx, batch in enumerate(batches)}
+            for future in as_completed(futures):
+                future.result()
+
+    with open(cache_path, "w") as f:
+        json.dump(cache, f, indent=2)
+
+    if errors:
+        console.print(f"  [yellow]⚠ {errors} batches fell back to raw description[/yellow]")
+    console.print(f"  [green]✓ {len(cache)} names cached[/green]")
 
     return cache
 
@@ -391,14 +463,15 @@ def generate_commonness(foods: dict[int, dict], cache_path: Path, skip: bool = F
     print(f"  Generating commonness scores for {len(needs_scores)} foods via Haiku...")
 
     batch_size = 5
+    max_workers = 10
+    lock = threading.Lock()
     processed = 0
+    errors = 0
 
-    for i in range(0, len(needs_scores), batch_size):
-        batch = needs_scores[i : i + batch_size]
+    def _make_prompt(batch: list[tuple[int, str]]) -> str:
         lines = [f"{fdc_id}|{desc}" for fdc_id, desc in batch]
         prompt_text = "\n".join(lines)
-
-        prompt = f"""Output ONLY a JSON object. No explanation, no markdown, no text before or after.
+        return f"""Output ONLY a JSON object. No explanation, no markdown, no text before or after.
 
 Rate each food on how commonly a typical US grocery shopper would buy it (1-5).
 Score the SPECIFIC form described, not the base ingredient:
@@ -416,65 +489,432 @@ Input (fdc_id|description):
 
 Output a JSON object mapping each fdc_id to its integer score, nothing else: {{"fdc_id": score, ...}}"""
 
-        batch_num = i // batch_size + 1
-        total_batches = (len(needs_scores) + batch_size - 1) // batch_size
-        print(f"\n  --- Batch {batch_num}/{total_batches} ({len(batch)} foods) ---")
+    batches = [needs_scores[i : i + batch_size] for i in range(0, len(needs_scores), batch_size)]
+
+    def _process_batch(
+        batch: list[tuple[int, str]],
+        progress: Progress,
+        task_id: int,
+    ) -> None:
+        nonlocal processed, errors
+        prompt = _make_prompt(batch)
+        batch_lookup = {str(fdc_id): desc for fdc_id, desc in batch}
 
         try:
             response_text = _call_haiku(prompt)
         except (RuntimeError, subprocess.TimeoutExpired) as e:
-            print(f"  HAIKU ERROR: {e}")
-            print(f"  Falling back to score 3 for {len(batch)} foods")
-            for fdc_id, _desc in batch:
-                if str(fdc_id) not in cache:
-                    cache[str(fdc_id)] = 3
-            processed += len(batch)
-            continue
-
-        print(f"  Raw response ({len(response_text)} chars):")
-        # Show first 500 chars of response for debugging
-        preview = response_text[:500]
-        if len(response_text) > 500:
-            preview += "..."
-        print(f"    {preview}")
-
-        extracted = _extract_json(response_text)
-        try:
-            results = json.loads(extracted)
-            # Build a lookup from batch for readable logging
-            batch_desc = {str(fdc_id): desc for fdc_id, desc in batch}
-            for fdc_id_str, score in results.items():
-                clamped = max(1, min(5, int(score)))
-                cache[fdc_id_str] = clamped
-                desc = batch_desc.get(fdc_id_str, "?")
-                print(f"    {fdc_id_str}: {clamped} — {desc}")
-            parsed_count = len(results)
-            if parsed_count < len(batch):
-                missing = [str(fid) for fid, _ in batch if str(fid) not in results]
-                print(f"  WARNING: Only got {parsed_count}/{len(batch)} scores, missing: {missing[:10]}")
-                for fdc_id, _desc in batch:
+            with lock:
+                errors += 1
+                for fdc_id, _ in batch:
                     if str(fdc_id) not in cache:
                         cache[str(fdc_id)] = 3
-                        print(f"    {fdc_id}: 3 (fallback) — {_desc}")
-        except (json.JSONDecodeError, ValueError, TypeError) as e:
-            print(f"  PARSE ERROR: {e}")
-            print(f"  Falling back to score 3 for {len(batch)} foods")
-            for fdc_id, _desc in batch:
-                if str(fdc_id) not in cache:
-                    cache[str(fdc_id)] = 3
+                processed += len(batch)
+                progress.update(task_id, advance=len(batch), description=f"[red]Error: {e!s:.40s}")
+            return
 
-        processed += len(batch)
-        if processed % 500 == 0 or processed == len(needs_scores):
-            print(f"\n  === Progress: {processed}/{len(needs_scores)} done ===")
+        extracted = _extract_json(response_text)
+        with lock:
+            try:
+                results = json.loads(extracted)
+                sample_desc = None
+                for fdc_id_str, score in results.items():
+                    clamped = max(1, min(5, int(score)))
+                    cache[fdc_id_str] = clamped
+                    if sample_desc is None:
+                        sample_desc = f"{batch_lookup.get(fdc_id_str, '?')} → [cyan]{clamped}"
+                if len(results) < len(batch):
+                    for fdc_id, _ in batch:
+                        if str(fdc_id) not in cache:
+                            cache[str(fdc_id)] = 3
+                progress.update(task_id, advance=len(batch), description=sample_desc or "OK")
+            except (json.JSONDecodeError, ValueError, TypeError):
+                errors += 1
+                for fdc_id, _ in batch:
+                    if str(fdc_id) not in cache:
+                        cache[str(fdc_id)] = 3
+                progress.update(task_id, advance=len(batch), description="[red]Parse error")
 
-        # Save cache after each batch (resume-friendly)
-        with open(cache_path, "w") as f:
-            json.dump(cache, f, indent=2)
+            processed += len(batch)
+            if processed % (batch_size * 50) == 0 or processed == len(needs_scores):
+                with open(cache_path, "w") as f:
+                    json.dump(cache, f, indent=2)
+
+    console.print(f"  Running [bold]{len(batches)}[/bold] batches with [bold]{max_workers}[/bold] parallel workers")
+    with Progress(
+        TextColumn("[progress.description]{task.description}", justify="right"),
+        BarColumn(bar_width=40),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("Starting...", total=len(needs_scores))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_process_batch, batch, progress, task_id): idx for idx, batch in enumerate(batches)}
+            for future in as_completed(futures):
+                future.result()
+
+    with open(cache_path, "w") as f:
+        json.dump(cache, f, indent=2)
+
+    if errors:
+        console.print(f"  [yellow]⚠ {errors} batches fell back to score 3[/yellow]")
+    console.print(f"  [green]✓ {len(cache)} commonness scores cached[/green]")
 
     return cache
 
 
-def build_output(foods: dict[int, dict], names: dict[str, dict[str, str]], commonness: dict[str, int] | None = None) -> list[dict]:
+def generate_groups(
+    foods: dict[int, dict],
+    names: dict[str, dict[str, str]],
+    cache_path: Path,
+    skip: bool = False,
+) -> dict[str, str]:
+    """Generate canonical group names via Claude Haiku, with caching.
+
+    Returns dict keyed by fdc_id (str) -> group name string.
+    """
+    cache: dict[str, str] = {}
+    if cache_path.exists():
+        with open(cache_path) as f:
+            cache = json.load(f)
+        print(f"\n  Group cache: {len(cache)} entries loaded")
+
+    if skip:
+        for fdc_id in foods:
+            key = str(fdc_id)
+            if key not in cache:
+                name_entry = names.get(key, {"name": foods[fdc_id]["description"]})
+                cache[key] = name_entry.get("name", foods[fdc_id]["description"])
+        return cache
+
+    needs_groups: list[tuple[int, str, str, str]] = []
+    for fdc_id, food in foods.items():
+        if str(fdc_id) not in cache:
+            name_entry = names.get(str(fdc_id), {"name": food["description"], "subtitle": ""})
+            needs_groups.append((
+                fdc_id,
+                name_entry.get("name", food["description"]),
+                name_entry.get("subtitle", ""),
+                food["description"],
+            ))
+
+    if not needs_groups:
+        print("  All foods already have cached group names")
+        return cache
+
+    print(f"  Generating group names for {len(needs_groups)} foods via Haiku...")
+
+    batch_size = 5
+    max_workers = 10
+    lock = threading.Lock()
+    processed = 0
+
+    def _make_prompt(batch: list[tuple[int, str, str, str]]) -> str:
+        lines = [f"{fdc_id}|{name}|{subtitle}|{usda_desc}" for fdc_id, name, subtitle, usda_desc in batch]
+        prompt_text = "\n".join(lines)
+        return f"""Output ONLY a JSON object. No explanation, no markdown, no text before or after.
+
+Assign each food a canonical group name for clustering variants in a grocery app.
+
+The group name should answer: "If a shopper wanted THIS ingredient, what would they search for?"
+
+Rules:
+- Group foods that a meal planner would consider interchangeable options
+- Group all cuts of the same animal together (chicken breast + chicken thigh + whole chicken → "Chicken")
+- Group all varieties of the same dairy/grain/vegetable together (cheddar + swiss + mozzarella → "Cheese")
+- Keep different species/sources SEPARATE (cow milk ≠ coconut milk ≠ soy milk)
+- Keep genuinely different products SEPARATE (chocolate milk ≠ plain milk, butter ≠ cheese)
+- The group name should be 1-3 words, natural English, no brand names
+- Think: "what section of a grocery list would this go under?"
+
+Examples:
+  "Nonfat Milk, fortified" → "Milk"
+  "2% Milk, reduced fat" → "Milk"
+  "Whole Milk, 3.25% fat" → "Milk"
+  "Chocolate Milk, lowfat" → "Chocolate Milk"
+  "Coconut Milk, canned" → "Coconut Milk"
+  "Soymilk, original" → "Soy Milk"
+  "SILK Soymilk, vanilla" → "Soy Milk"
+  "Chicken Breast, raw" → "Chicken"
+  "Chicken Thigh, roasted" → "Chicken"
+  "Whole Chicken, raw" → "Chicken"
+  "Ground Beef, 80% lean" → "Beef"
+  "Beef Round, roasted" → "Beef"
+  "Beef Rib Eye, grilled" → "Beef"
+  "Ham, extra lean, roasted" → "Ham"
+  "Ham, canned" → "Ham"
+  "Greek Yogurt, plain" → "Yogurt"
+  "Greek Yogurt, strawberry" → "Yogurt"
+  "Cheddar Cheese" → "Cheese"
+  "Swiss Cheese" → "Cheese"
+  "Mozzarella" → "Cheese"
+  "Cream Cheese" → "Cream Cheese"
+  "Sweet Corn, canned" → "Sweet Corn"
+  "Sweet Corn, frozen" → "Sweet Corn"
+  "Atlantic Salmon, raw" → "Salmon"
+  "Sockeye Salmon, canned" → "Salmon"
+  "Lamb Shoulder, roasted" → "Lamb"
+  "Lamb Leg, braised" → "Lamb"
+
+Input (fdc_id|name|subtitle|usda_description):
+{prompt_text}
+
+Output ONLY a JSON object mapping each fdc_id to its group name string: {{"fdc_id": "Group Name", ...}}"""
+
+    batches = [needs_groups[i : i + batch_size] for i in range(0, len(needs_groups), batch_size)]
+    total_batches = len(batches)
+    errors = 0
+
+    def _process_batch(
+        batch_idx: int,
+        batch: list[tuple[int, str, str, str]],
+        progress: Progress,
+        task_id: int,
+    ) -> None:
+        nonlocal processed, errors
+        prompt = _make_prompt(batch)
+        batch_lookup = {str(fdc_id): name for fdc_id, name, _, _ in batch}
+
+        try:
+            response_text = _call_haiku(prompt)
+        except (RuntimeError, subprocess.TimeoutExpired) as e:
+            with lock:
+                errors += 1
+                for fdc_id, name, _, _ in batch:
+                    if str(fdc_id) not in cache:
+                        cache[str(fdc_id)] = name
+                processed += len(batch)
+                progress.update(task_id, advance=len(batch), description=f"[red]Error: {e!s:.40s}")
+            return
+
+        extracted = _extract_json(response_text)
+        with lock:
+            try:
+                results = json.loads(extracted)
+                for fdc_id_str, group_name in results.items():
+                    cache[fdc_id_str] = str(group_name).strip()
+                if len(results) < len(batch):
+                    for fdc_id, name, _, _ in batch:
+                        if str(fdc_id) not in cache:
+                            cache[str(fdc_id)] = name
+                # Show a sample from this batch in the progress description
+                sample = next(iter(results.items()), None)
+                if sample:
+                    desc = batch_lookup.get(sample[0], "?")
+                    progress.update(task_id, advance=len(batch), description=f"{desc} → [cyan]{sample[1]}")
+                else:
+                    progress.update(task_id, advance=len(batch))
+            except (json.JSONDecodeError, ValueError, TypeError):
+                errors += 1
+                for fdc_id, name, _, _ in batch:
+                    if str(fdc_id) not in cache:
+                        cache[str(fdc_id)] = name
+                progress.update(task_id, advance=len(batch), description="[red]Parse error")
+
+            processed += len(batch)
+
+            # Save cache every 50 batches
+            if processed % (batch_size * 50) == 0 or processed == len(needs_groups):
+                with open(cache_path, "w") as f:
+                    json.dump(cache, f, indent=2)
+
+    console.print(f"  Running [bold]{total_batches}[/bold] batches with [bold]{max_workers}[/bold] parallel workers")
+    with Progress(
+        TextColumn("[progress.description]{task.description}", justify="right"),
+        BarColumn(bar_width=40),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("Starting...", total=len(needs_groups))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_process_batch, idx, batch, progress, task_id): idx
+                for idx, batch in enumerate(batches)
+            }
+            for future in as_completed(futures):
+                future.result()  # propagate exceptions
+
+    # Final save
+    with open(cache_path, "w") as f:
+        json.dump(cache, f, indent=2)
+
+    if errors:
+        console.print(f"  [yellow]⚠ {errors} batches fell back to food name[/yellow]")
+    console.print(f"  [green]✓ {len(cache)} groups cached[/green]")
+
+    return cache
+
+
+def generate_portions(
+    foods: dict[int, dict],
+    names: dict[str, dict[str, str]],
+    cache_path: Path,
+    skip: bool = False,
+) -> dict[str, dict]:
+    """Generate grocery-friendly portion units via Claude Haiku, with caching.
+
+    Uses USDA portion data as grounding, then asks Haiku to pick the best
+    grocery-shopping unit and clean up the modifier text.
+
+    Returns dict keyed by fdc_id (str) -> {"unit": str, "g": float} or None.
+    """
+    cache: dict[str, dict | None] = {}
+    if cache_path.exists():
+        with open(cache_path) as f:
+            cache = json.load(f)
+        print(f"\n  Portion cache: {len(cache)} entries loaded")
+
+    if skip:
+        for fdc_id in foods:
+            key = str(fdc_id)
+            if key not in cache:
+                cache[key] = None
+        return cache
+
+    needs_portions: list[tuple[int, str, str, list[dict]]] = []
+    for fdc_id, food in foods.items():
+        key = str(fdc_id)
+        if key not in cache:
+            name_entry = names.get(key, {"name": food["description"]})
+            portions = food.get("portions", [])
+            needs_portions.append((
+                fdc_id,
+                name_entry.get("name", food["description"]),
+                food["description"],
+                portions,
+            ))
+
+    if not needs_portions:
+        print("  All foods already have cached portions")
+        return cache
+
+    print(f"  Generating portions for {len(needs_portions)} foods via Haiku...")
+
+    batch_size = 20
+    max_workers = 10
+    lock = threading.Lock()
+    processed = 0
+    errors = 0
+
+    def _make_prompt(batch: list[tuple[int, str, str, list[dict]]]) -> str:
+        lines = []
+        for fdc_id, name, usda_desc, portions in batch:
+            if portions:
+                portion_strs = [
+                    f"{p['amount']} {p['modifier']} = {p['g']}g"
+                    for p in portions
+                ]
+                lines.append(f"{fdc_id}|{name}|{usda_desc}|{'; '.join(portion_strs)}")
+            else:
+                lines.append(f"{fdc_id}|{name}|{usda_desc}|NO_PORTIONS")
+        prompt_text = "\n".join(lines)
+        return f"""Output ONLY a JSON object. No explanation, no markdown, no text before or after.
+
+For each food, pick the single best grocery-shopping unit from the available USDA portions.
+The gram weight MUST come from the USDA data provided. Do not invent gram weights.
+
+Rules:
+- Pick the unit a grocery shopper would use to buy this item
+- Prefer natural counting units: "egg", "breast", "fillet", "banana", "slice" over "oz" or "cup" for countable items
+- For liquids, prefer "cup" over "fl oz" or "tbsp"
+- For bulk/dry goods (rice, oats, flour), prefer "cup"
+- Clean up the modifier to a short, clean label (e.g., "breast, skin not eaten" -> "breast", "large (8\" to 8-7/8\" long)" -> "large", "cup, chopped" -> "cup")
+- If the amount is not 1.0, normalize: e.g., "0.5 fillet = 154g" -> unit="fillet", g=308
+- If a food has NO_PORTIONS or no useful grocery unit, output null for that food
+- Skip "NLEA serving" units, they are not grocery-relevant
+
+Output a JSON object mapping each fdc_id to either {{"unit": "clean label", "g": grams_per_one_unit}} or null:
+{{"123": {{"unit": "large egg", "g": 50}}, "456": {{"unit": "cup", "g": 240}}, "789": null}}
+
+Input (fdc_id|name|usda_description|portions):
+{prompt_text}"""
+
+    batches = [needs_portions[i : i + batch_size] for i in range(0, len(needs_portions), batch_size)]
+
+    def _process_batch(
+        batch: list[tuple[int, str, str, list[dict]]],
+        progress: Progress,
+        task_id: int,
+    ) -> None:
+        nonlocal processed, errors
+        prompt = _make_prompt(batch)
+        batch_lookup = {str(fdc_id): name for fdc_id, name, _, _ in batch}
+
+        try:
+            response_text = _call_haiku(prompt)
+        except (RuntimeError, subprocess.TimeoutExpired) as e:
+            with lock:
+                errors += 1
+                for fdc_id, _, _, _ in batch:
+                    if str(fdc_id) not in cache:
+                        cache[str(fdc_id)] = None
+                processed += len(batch)
+                progress.update(task_id, advance=len(batch), description=f"[red]Error: {e!s:.40s}")
+            return
+
+        extracted = _extract_json(response_text)
+        with lock:
+            try:
+                results = json.loads(extracted)
+                sample_desc = None
+                for fdc_id_str, portion in results.items():
+                    if portion is not None:
+                        # Validate structure
+                        if isinstance(portion, dict) and "unit" in portion and "g" in portion:
+                            cache[fdc_id_str] = {"unit": str(portion["unit"]), "g": float(portion["g"])}
+                        else:
+                            cache[fdc_id_str] = None
+                    else:
+                        cache[fdc_id_str] = None
+                    if sample_desc is None and cache.get(fdc_id_str) is not None:
+                        sample_desc = f"{batch_lookup.get(fdc_id_str, '?')} -> [cyan]{cache[fdc_id_str]['unit']}"
+                if len(results) < len(batch):
+                    for fdc_id, _, _, _ in batch:
+                        if str(fdc_id) not in cache:
+                            cache[str(fdc_id)] = None
+                progress.update(task_id, advance=len(batch), description=sample_desc or "OK")
+            except (json.JSONDecodeError, ValueError, TypeError):
+                errors += 1
+                for fdc_id, _, _, _ in batch:
+                    if str(fdc_id) not in cache:
+                        cache[str(fdc_id)] = None
+                progress.update(task_id, advance=len(batch), description="[red]Parse error")
+
+            processed += len(batch)
+            if processed % (batch_size * 50) == 0 or processed == len(needs_portions):
+                with open(cache_path, "w") as f:
+                    json.dump(cache, f, indent=2)
+
+    console.print(f"  Running [bold]{len(batches)}[/bold] batches with [bold]{max_workers}[/bold] parallel workers")
+    with Progress(
+        TextColumn("[progress.description]{task.description}", justify="right"),
+        BarColumn(bar_width=40),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("Starting...", total=len(needs_portions))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_process_batch, batch, progress, task_id): idx for idx, batch in enumerate(batches)}
+            for future in as_completed(futures):
+                future.result()
+
+    with open(cache_path, "w") as f:
+        json.dump(cache, f, indent=2)
+
+    has_portion = sum(1 for v in cache.values() if v is not None)
+    if errors:
+        console.print(f"  [yellow]⚠ {errors} batches fell back to null[/yellow]")
+    console.print(f"  [green]✓ {has_portion}/{len(cache)} foods have grocery portions[/green]")
+
+    return cache
+
+
+def build_output(foods: dict[int, dict], names: dict[str, dict[str, str]], commonness: dict[str, int] | None = None, groups: dict[str, str] | None = None, portions: dict[str, dict | None] | None = None) -> list[dict]:
     """Build the final output list."""
     output: list[dict] = []
     for fdc_id, food in foods.items():
@@ -490,6 +930,12 @@ def build_output(foods: dict[int, dict], names: dict[str, dict[str, str]], commo
         }
         if commonness is not None:
             entry["commonness"] = commonness.get(key, 3)
+        if groups is not None:
+            entry["group"] = groups.get(key, name_entry["name"])
+        if portions is not None:
+            portion = portions.get(key)
+            if portion is not None:
+                entry["portion"] = portion
         output.append(entry)
 
     # Sort by name for stable output
@@ -501,6 +947,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build food database from USDA data")
     parser.add_argument("--skip-names", action="store_true", help="Skip Haiku name generation (use raw descriptions)")
     parser.add_argument("--skip-commonness", action="store_true", help="Skip Haiku commonness score generation (default to 3)")
+    parser.add_argument("--skip-groups", action="store_true", help="Skip Haiku group name generation (default to food name)")
+    parser.add_argument("--skip-portions", action="store_true", help="Skip Haiku portion generation")
     args = parser.parse_args()
 
     foundation = load_foundation(FOUNDATION_PATH)
@@ -509,8 +957,10 @@ def main() -> None:
 
     names = generate_names(merged, NAME_CACHE_PATH, skip=args.skip_names)
     commonness = generate_commonness(merged, COMMONNESS_CACHE_PATH, skip=args.skip_commonness)
+    groups = generate_groups(merged, names, GROUP_CACHE_PATH, skip=args.skip_groups)
+    portions = generate_portions(merged, names, PORTION_CACHE_PATH, skip=args.skip_portions)
 
-    output = build_output(merged, names, commonness)
+    output = build_output(merged, names, commonness, groups, portions)
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT, "w") as f:

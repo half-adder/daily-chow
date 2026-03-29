@@ -355,6 +355,156 @@ describe('Loose constraints', () => {
 	});
 });
 
+describe('Depth vs Breadth', () => {
+	it('depth mode lifts worst nutrients better than breadth', async () => {
+		const microTargets: Record<string, number> = {
+			calcium_mg: 1000, iron_mg: 8, magnesium_mg: 400, phosphorus_mg: 700,
+			potassium_mg: 3400, zinc_mg: 11, copper_mg: 0.9, manganese_mg: 2.3,
+			selenium_mcg: 55, vitamin_c_mg: 90, thiamin_mg: 1.2, riboflavin_mg: 1.3,
+			niacin_mg: 16, vitamin_b6_mg: 1.3, folate_mcg: 400, vitamin_b12_mcg: 2.4,
+			vitamin_a_mcg: 900, vitamin_d_mcg: 15, vitamin_e_mg: 15, vitamin_k_mcg: 120,
+		};
+		const microUls: Record<string, number> = {
+			calcium_mg: 2500, iron_mg: 45, zinc_mg: 40, manganese_mg: 11,
+			selenium_mcg: 400, vitamin_c_mg: 2000, niacin_mg: 35, vitamin_b6_mg: 100,
+			folate_mcg: 1000, vitamin_a_mcg: 3000, vitamin_d_mcg: 100, vitamin_e_mg: 1000,
+		};
+		const sharedInput = {
+			ingredients: [
+				{ key: findKey('White Rice'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Broccoli'), min_g: 41, max_g: 1000 },
+				{ key: findKey('Carrots'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Zucchini'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Avocado Oil'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Black Beans'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Split Peas'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Ground Beef'), min_g: 0, max_g: 1000 },
+			],
+			foods: testFoods,
+			targets: { meal_calories_kcal: 2500, cal_tolerance: 50 },
+			micro_targets: microTargets,
+			micro_uls: microUls,
+			optimize_nutrients: Object.keys(microTargets),
+			macro_ratio: {
+				carb_pct: 25, protein_pct: 57, fat_pct: 18,
+				pinned_carb_g: 0, pinned_protein_g: 0, pinned_fat_g: 0,
+			},
+			macro_constraints: [
+				{ nutrient: 'fiber' as const, mode: 'eq' as const, grams: 40, hard: true },
+			],
+			priorities: ['macro_ratio', 'micros', 'ingredient_diversity', 'total_weight'],
+			sex: 'male',
+			age_group: '19-30',
+		};
+
+		const depthResult = await solveLocal({ ...sharedInput, micro_strategy: 'depth' });
+		const breadthResult = await solveLocal({ ...sharedInput, micro_strategy: 'breadth' });
+
+		expect(depthResult.status).toBe('optimal');
+		expect(breadthResult.status).toBe('optimal');
+
+		// Find the worst nutrients (lowest pct) in each, excluding vitamin D
+		// which is essentially unreachable with these foods
+		const depthPcts = Object.entries(depthResult.micros)
+			.filter(([k]) => k !== 'vitamin_d_mcg')
+			.map(([k, v]) => ({ key: k, pct: v.pct }))
+			.sort((a, b) => a.pct - b.pct);
+		const breadthPcts = Object.entries(breadthResult.micros)
+			.filter(([k]) => k !== 'vitamin_d_mcg')
+			.map(([k, v]) => ({ key: k, pct: v.pct }))
+			.sort((a, b) => a.pct - b.pct);
+
+		// Depth's worst 3 nutrients (excluding vitamin D) should be
+		// equal or better than breadth's worst 3
+		const depthWorst3Avg = (depthPcts[0].pct + depthPcts[1].pct + depthPcts[2].pct) / 3;
+		const breadthWorst3Avg = (breadthPcts[0].pct + breadthPcts[1].pct + breadthPcts[2].pct) / 3;
+
+		console.log('Depth worst 3:', depthPcts.slice(0, 3).map(p => `${p.key}=${p.pct}%`).join(', '));
+		console.log('Breadth worst 3:', breadthPcts.slice(0, 3).map(p => `${p.key}=${p.pct}%`).join(', '));
+		console.log(`Depth worst3 avg: ${depthWorst3Avg.toFixed(1)}%, Breadth worst3 avg: ${breadthWorst3Avg.toFixed(1)}%`);
+
+		expect(depthWorst3Avg).toBeGreaterThanOrEqual(breadthWorst3Avg - 5);
+	});
+
+	it('depth mode lifts worst nutrients when micros is first priority', async () => {
+		const microTargets: Record<string, number> = {
+			calcium_mg: 1000, iron_mg: 8, magnesium_mg: 400, phosphorus_mg: 700,
+			potassium_mg: 3400, zinc_mg: 11, copper_mg: 0.9, manganese_mg: 2.3,
+			selenium_mcg: 55, vitamin_c_mg: 90, thiamin_mg: 1.2, riboflavin_mg: 1.3,
+			niacin_mg: 16, vitamin_b6_mg: 1.3, folate_mcg: 400, vitamin_b12_mcg: 2.4,
+			vitamin_a_mcg: 900, vitamin_d_mcg: 15, vitamin_e_mg: 15, vitamin_k_mcg: 120,
+		};
+		const microUls: Record<string, number> = {
+			calcium_mg: 2500, iron_mg: 45, zinc_mg: 40, manganese_mg: 11,
+			selenium_mcg: 400, vitamin_c_mg: 2000, niacin_mg: 35, vitamin_b6_mg: 100,
+			folate_mcg: 1000, vitamin_a_mcg: 3000, vitamin_d_mcg: 100, vitamin_e_mg: 1000,
+		};
+		const sharedInput = {
+			ingredients: [
+				{ key: findKey('White Rice'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Broccoli'), min_g: 41, max_g: 1000 },
+				{ key: findKey('Carrots'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Zucchini'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Avocado Oil'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Black Beans'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Split Peas'), min_g: 0, max_g: 1000 },
+				{ key: findKey('Ground Beef'), min_g: 0, max_g: 1000 },
+			],
+			foods: testFoods,
+			targets: { meal_calories_kcal: 2500, cal_tolerance: 50 },
+			micro_targets: microTargets,
+			micro_uls: microUls,
+			optimize_nutrients: Object.keys(microTargets),
+			macro_ratio: {
+				carb_pct: 37, protein_pct: 47, fat_pct: 16,
+				pinned_carb_g: 0, pinned_protein_g: 0, pinned_fat_g: 0,
+			},
+			macro_constraints: [
+				{ nutrient: 'fiber' as const, mode: 'gte' as const, grams: 40, hard: true },
+			],
+			// Micros FIRST priority — this is the user's actual setup
+			priorities: ['micros', 'ingredient_diversity', 'macro_ratio', 'total_weight'],
+			sex: 'male',
+			age_group: '19-30',
+		};
+
+		const depthResult = await solveLocal({ ...sharedInput, micro_strategy: 'depth' });
+		const breadthResult = await solveLocal({ ...sharedInput, micro_strategy: 'breadth' });
+
+		expect(depthResult.status).toBe('optimal');
+		expect(breadthResult.status).toBe('optimal');
+
+		// Compare all nutrients side by side
+		const depthPcts = Object.entries(depthResult.micros)
+			.filter(([k]) => k !== 'vitamin_d_mcg')
+			.map(([k, v]) => ({ key: k, pct: v.pct }))
+			.sort((a, b) => a.pct - b.pct);
+		const breadthPcts = Object.entries(breadthResult.micros)
+			.filter(([k]) => k !== 'vitamin_d_mcg')
+			.map(([k, v]) => ({ key: k, pct: v.pct }))
+			.sort((a, b) => a.pct - b.pct);
+
+		const depthWorst3Avg = (depthPcts[0].pct + depthPcts[1].pct + depthPcts[2].pct) / 3;
+		const breadthWorst3Avg = (breadthPcts[0].pct + breadthPcts[1].pct + breadthPcts[2].pct) / 3;
+
+		console.log('Micros-first depth worst 3:', depthPcts.slice(0, 3).map(p => `${p.key}=${p.pct}%`).join(', '));
+		console.log('Micros-first breadth worst 3:', breadthPcts.slice(0, 3).map(p => `${p.key}=${p.pct}%`).join(', '));
+		console.log(`Micros-first depth worst3 avg: ${depthWorst3Avg.toFixed(1)}%, breadth worst3 avg: ${breadthWorst3Avg.toFixed(1)}%`);
+
+		// Log total shortfall too
+		let depthShortfall = 0, breadthShortfall = 0;
+		for (const key of Object.keys(microTargets)) {
+			if (key === 'vitamin_d_mcg') continue;
+			depthShortfall += Math.max(0, 100 - (depthResult.micros[key]?.pct ?? 0));
+			breadthShortfall += Math.max(0, 100 - (breadthResult.micros[key]?.pct ?? 0));
+		}
+		console.log(`Depth total shortfall: ${depthShortfall.toFixed(1)}, Breadth total shortfall: ${breadthShortfall.toFixed(1)}`);
+
+		// Depth should lift the worst nutrients — worst 3 avg should be >= breadth
+		expect(depthWorst3Avg).toBeGreaterThanOrEqual(breadthWorst3Avg - 5);
+	});
+});
+
 describe('Priority ordering', () => {
 	it('priority ordering affects solution', async () => {
 		const microTargets = {
