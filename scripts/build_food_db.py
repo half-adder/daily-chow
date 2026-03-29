@@ -819,8 +819,13 @@ The gram weight MUST come from the USDA data provided. Do not invent gram weight
 Rules:
 - Pick the unit a grocery shopper would use to buy this item
 - Prefer natural counting units: "egg", "breast", "fillet", "banana", "slice" over "oz" or "cup" for countable items
+- For whole fruits and vegetables bought by count (onions, tomatoes, peppers, potatoes, parsnips, turnips, tangerines, plums, yams, etc.), prefer "medium" or "large" over "cup". Never use "cup" for items you buy as whole pieces.
+- For herbs (cilantro, chives, epazote, etc.), prefer "bunch" over "sprig", "leaf", or "cup"
+- For leafy greens sold in bags or bunches (arugula, spinach), prefer "bunch" or "bag" over "leaf"
+- For pickled, canned, or jarred items (stewed tomatoes, crushed tomatoes, pickled peppers, grape leaves), prefer "can" or "jar" over "cup"
+- For large whole winter squash (pumpkin, butternut, spaghetti squash, hubbard squash), output null. Sizes vary too much for a useful unit.
 - For liquids, prefer "cup" over "fl oz" or "tbsp"
-- For bulk/dry goods (rice, oats, flour), prefer "cup"
+- For bulk/dry goods (rice, oats, flour, dried beans), prefer "cup"
 - Clean up the modifier to a short, clean label (e.g., "breast, skin not eaten" -> "breast", "large (8\" to 8-7/8\" long)" -> "large", "cup, chopped" -> "cup")
 - If the amount is not 1.0, normalize: e.g., "0.5 fillet = 154g" -> unit="fillet", g=308
 - If a food has NO_PORTIONS or no useful grocery unit, output null for that food
