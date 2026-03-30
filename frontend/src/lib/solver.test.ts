@@ -84,6 +84,37 @@ describe('buildLpModel', () => {
 		expect(lp).toMatch(/50 <= g_169756 <= 400/);
 	});
 
+	it('uses LP-safe variable names for negative fdc_ids (custom foods)', () => {
+		const customFood: Food = {
+			fdc_id: -1,
+			name: 'Custom Bar',
+			subtitle: '',
+			usda_description: '',
+			calories_kcal_per_100g: 200,
+			protein_g_per_100g: 20,
+			fat_g_per_100g: 8,
+			carbs_g_per_100g: 25,
+			fiber_g_per_100g: 3,
+			category: 'Custom',
+			commonness: 5,
+			group: 'Custom Bar',
+			micros: {},
+		};
+		const lp = modelToLpString(buildLpModel({
+			ingredients: [
+				{ key: 169756, min_g: 0, max_g: 400 },
+				{ key: -1, min_g: 0, max_g: 200 },
+			],
+			foods: { 169756: rice, [-1]: customFood },
+			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
+		}));
+		// Should use g_n1 not g_-1
+		expect(lp).toContain('g_n1');
+		expect(lp).not.toMatch(/g_-1/);
+		// Positive IDs unchanged
+		expect(lp).toContain('g_169756');
+	});
+
 	it('includes soft macro constraints with deviation vars', () => {
 		const lp = modelToLpString(buildLpModel({
 			ingredients: [
@@ -314,5 +345,78 @@ describe('solveLocal', () => {
 		});
 		expect(result.status).toBe('optimal');
 		expect(result.meal_protein_g).toBeGreaterThanOrEqual(9.5);
+	});
+
+	it('solves with custom food (negative fdc_id)', async () => {
+		const customFood: Food = {
+			fdc_id: -1,
+			name: 'Protein Bar',
+			subtitle: '',
+			usda_description: '',
+			calories_kcal_per_100g: 400,
+			protein_g_per_100g: 30,
+			fat_g_per_100g: 15,
+			carbs_g_per_100g: 40,
+			fiber_g_per_100g: 5,
+			category: 'Custom',
+			commonness: 5,
+			group: 'Protein Bar',
+			micros: { iron_mg: 3.0 },
+		};
+		const result = await solveLocal({
+			ingredients: [
+				{ key: 169756, min_g: 0, max_g: 400 },
+				{ key: -1, min_g: 0, max_g: 200 },
+			],
+			foods: { 169756: rice, [-1]: customFood },
+			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
+		});
+		expect(result.status).toBe('optimal');
+		expect(result.ingredients).toHaveLength(2);
+		expect(result.meal_calories_kcal).toBeGreaterThanOrEqual(449);
+		expect(result.meal_calories_kcal).toBeLessThanOrEqual(551);
+	});
+
+	it('solves with multiple custom foods (different negative IDs)', async () => {
+		const bar: Food = {
+			fdc_id: -1,
+			name: 'Bar',
+			subtitle: '',
+			usda_description: '',
+			calories_kcal_per_100g: 400,
+			protein_g_per_100g: 20,
+			fat_g_per_100g: 15,
+			carbs_g_per_100g: 50,
+			fiber_g_per_100g: 3,
+			category: 'Custom',
+			commonness: 5,
+			group: 'Bar',
+			micros: {},
+		};
+		const shake: Food = {
+			fdc_id: -2,
+			name: 'Shake',
+			subtitle: '',
+			usda_description: '',
+			calories_kcal_per_100g: 150,
+			protein_g_per_100g: 25,
+			fat_g_per_100g: 3,
+			carbs_g_per_100g: 10,
+			fiber_g_per_100g: 1,
+			category: 'Custom',
+			commonness: 5,
+			group: 'Shake',
+			micros: {},
+		};
+		const result = await solveLocal({
+			ingredients: [
+				{ key: -1, min_g: 0, max_g: 200 },
+				{ key: -2, min_g: 0, max_g: 500 },
+			],
+			foods: { [-1]: bar, [-2]: shake },
+			targets: { meal_calories_kcal: 500, cal_tolerance: 50 },
+		});
+		expect(result.status).toBe('optimal');
+		expect(result.ingredients).toHaveLength(2);
 	});
 });

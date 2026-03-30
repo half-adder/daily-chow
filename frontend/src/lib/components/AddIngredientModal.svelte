@@ -324,7 +324,8 @@
 				saveCustomFoods(existing);
 				oncustomchange();
 				formError = '';
-			} catch {
+			} catch (err) {
+				console.error('Import failed:', err);
 				formError = 'Failed to read file';
 			}
 		};
@@ -373,11 +374,9 @@
 				<button class="create-custom-btn" onclick={() => { resetForm(); view = 'create'; }}>
 					+ Create Custom Ingredient
 				</button>
-				{#if customFoods.length > 0}
-					<button class="manage-link" onclick={() => (view = 'manage')}>
-						My Ingredients ({customFoods.length})
-					</button>
-				{/if}
+				<button class="manage-link" onclick={() => (view = 'manage')}>
+					My Ingredients{#if customFoods.length > 0} ({customFoods.length}){/if}
+				</button>
 			</div>
 
 			<div class="results">

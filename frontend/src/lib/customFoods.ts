@@ -43,8 +43,9 @@ export function exportCustomFoods(foods: Food[]): void {
 }
 
 export function validateImportedFoods(data: unknown): Food[] | null {
-	if (!Array.isArray(data)) return null;
-	for (const item of data) {
+	// Accept a single object or an array
+	const items = Array.isArray(data) ? data : [data];
+	for (const item of items) {
 		if (
 			typeof item !== 'object' ||
 			item === null ||
@@ -58,5 +59,5 @@ export function validateImportedFoods(data: unknown): Food[] | null {
 			return null;
 		}
 	}
-	return data as Food[];
+	return items as Food[];
 }

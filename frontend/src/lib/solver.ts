@@ -102,6 +102,11 @@ export interface LpModelComponents {
 	lexLevels: { varName: string; maxVal: number }[][];
 }
 
+/** LP variable name: negative IDs (custom foods) use "n" prefix instead of "-" */
+function gVar(key: number): string {
+	return key < 0 ? `g_n${-key}` : `g_${key}`;
+}
+
 export function buildLpModel(input: LpModelInput): LpModelComponents {
 	const {
 		ingredients,
@@ -136,7 +141,7 @@ export function buildLpModel(input: LpModelInput): LpModelComponents {
 
 	// ── Decision variables ──────────────────────────────────────────
 	for (const ing of ingredients) {
-		addBound(ing.min_g, `g_${ing.key}`, ing.max_g);
+		addBound(ing.min_g, gVar(ing.key), ing.max_g);
 	}
 
 	// Precompute per-gram coefficients (natural units, no scaling)
@@ -164,7 +169,7 @@ export function buildLpModel(input: LpModelInput): LpModelComponents {
 
 	// Helper to build sum expression terms for a coefficient map
 	function nutrientTerms(coeffs: Record<number, number>): [number, string][] {
-		return ingredients.map((ing) => [coeffs[ing.key], `g_${ing.key}`]);
+		return ingredients.map((ing) => [coeffs[ing.key], gVar(ing.key)]);
 	}
 
 	// ── Calorie band ────────────────────────────────────────────────
@@ -277,7 +282,7 @@ export function buildLpModel(input: LpModelInput): LpModelComponents {
 
 	function microTerms(key: string): [number, string][] {
 		return ingredients
-			.map((ing) => [microPerG(foods[ing.key], key), `g_${ing.key}`] as [number, string])
+			.map((ing) => [microPerG(foods[ing.key], key), gVar(ing.key)] as [number, string])
 			.filter(([c]) => Math.abs(c) > 1e-12);
 	}
 
@@ -523,7 +528,7 @@ export function buildLpModel(input: LpModelInput): LpModelComponents {
 			const diffTerms: [number, string][] = [
 				...ingredients.map(
 					(ing) =>
-						[entry.calCoeffs[ing.key] * 100, `g_${ing.key}`] as [number, string]
+						[entry.calCoeffs[ing.key] * 100, gVar(ing.key)] as [number, string]
 				),
 				[-1, `macro_${entry.name}_pos`],
 				[1, `macro_${entry.name}_neg`],
@@ -593,7 +598,7 @@ export function buildLpModel(input: LpModelInput): LpModelComponents {
 		const maxPossible = Math.max(...ingredients.map((ing) => ing.max_g));
 		addBound(0, 'max_gram', maxPossible);
 		for (const ing of ingredients) {
-			constraints.push(` max_gram_g_${ing.key}: max_gram - g_${ing.key} >= 0`);
+			constraints.push(` max_gram_${gVar(ing.key)}: max_gram - ${gVar(ing.key)} >= 0`);
 		}
 		hasDiversity = true;
 		maxDiversity = maxPossible;
@@ -709,7 +714,7 @@ function buildLevelObjective(
 		const t = level[i];
 		if (t.varName === '__total_weight__') {
 			for (const ing of ingredients) {
-				terms.push([weights[i], `g_${ing.key}`]);
+				terms.push([weights[i], gVar(ing.key)]);
 			}
 		} else {
 			terms.push([weights[i], t.varName]);
@@ -860,7 +865,7 @@ export async function solveLocal(input: LpModelInput): Promise<SolveResponse> {
 	let totalFiber = 0;
 
 	for (const ing of input.ingredients) {
-		const colName = `g_${ing.key}`;
+		const colName = gVar(ing.key);
 		const col = result.Columns[colName];
 		const grams = col?.Primal ?? 0;
 

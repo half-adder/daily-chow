@@ -207,8 +207,8 @@ function getWorker(): Worker {
 /** Send foods catalog to the worker once. Call after fetchFoods(). */
 export function initWorkerFoods(foods: Record<number, Food>) {
 	const w = getWorker();
-	// foods from fetchFoods() is plain JSON (no Svelte proxy), safe to post directly
-	w.postMessage({ type: 'init', foods });
+	// JSON round-trip strips Svelte 5 $state proxies
+	w.postMessage({ type: 'init', foods: JSON.parse(JSON.stringify(foods)) });
 	foodsSent = true;
 }
 
