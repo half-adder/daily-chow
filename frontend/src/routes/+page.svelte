@@ -14,6 +14,7 @@
 	import ProfileCard from '$lib/components/ProfileCard.svelte';
 	import GroceryListModal from '$lib/components/GroceryListModal.svelte';
 	import { INGREDIENT_COLORS, assignColor, computeContributions, enrichWithDri, type IngredientContribution } from '$lib/contributions';
+	import { loadCustomFoods, saveCustomFoods, mergeCustomFoods, nextCustomId } from '$lib/customFoods';
 
 	// ── Micronutrient display info ──────────────────────────────────
 
@@ -58,6 +59,7 @@
 	// ── State ────────────────────────────────────────────────────────
 
 	let foods = $state<Record<number, Food>>({});
+	let customFoods = $state<Food[]>([]);
 
 	// Targets
 	let dailyCal = $state(3500);
@@ -472,6 +474,21 @@
 		triggerSolve();
 	}
 
+	function refreshCustomFoods() {
+		customFoods = loadCustomFoods();
+		const usdaOnly: Record<number, Food> = {};
+		for (const [id, food] of Object.entries(foods)) {
+			if (food.category !== 'Custom') usdaOnly[Number(id)] = food;
+		}
+		const merged = mergeCustomFoods(usdaOnly, customFoods);
+		foods = merged;
+		initWorkerFoods(merged);
+		// Remove ingredients that reference deleted custom foods
+		const before = ingredients.length;
+		ingredients = ingredients.filter((ing) => ing.key >= 0 || merged[ing.key]);
+		if (ingredients.length !== before) triggerSolve();
+	}
+
 	// ── Helpers ──────────────────────────────────────────────────────
 
 	function pctColor(pct: number, earPct: number | null = null, ulPct: number | null = null): string {
@@ -574,8 +591,10 @@
 	onMount(async () => {
 		const hasState = localStorage.getItem('daily-chow');
 		const rawFoods = await fetchFoods();
-		initWorkerFoods(rawFoods);
-		foods = rawFoods;
+		customFoods = loadCustomFoods();
+		const merged = mergeCustomFoods(rawFoods, customFoods);
+		initWorkerFoods(merged);
+		foods = merged;
 		loadState();
 		applyTheme(theme);
 		doSolve();
@@ -949,6 +968,8 @@
 		maxPerIngredient={sliderAbsMax}
 		onselect={addIngredient}
 		onclose={() => (showAddModal = false)}
+		{customFoods}
+		oncustomchange={refreshCustomFoods}
 	/>
 {/if}
 
